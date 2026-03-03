@@ -1,0 +1,21 @@
+# Allow index.php to be served
+DirectoryIndex index.php
+
+# Disable directory listing
+Options -Indexes
+
+# Block access to .env and other sensitive files
+<FilesMatch "\.(env|lock|md|yml|yaml)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block hidden files/folders
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+
+
+
