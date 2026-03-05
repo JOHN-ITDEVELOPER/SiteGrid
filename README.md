@@ -1,10 +1,10 @@
-# Mjengo - Worker Management & Payment Platform
+# SiteGrid - Worker Management & Payment Platform
 
 A comprehensive Laravel-based platform for managing casual workers, site operations, attendance tracking, and financial flows via M-Pesa integration.
 
 ## Overview
 
-Mjengo is a complete solution for:
+SiteGrid is a complete solution for:
 - **Worker Management** - Recruitment, onboarding, KYC verification, and suspension
 - **Attendance Tracking** - Daily punch-ins, corrections, and evidence collection
 - **Payroll Processing** - Automated invoice generation, payout approvals, M-Pesa disbursement
@@ -77,7 +77,7 @@ Mjengo is a complete solution for:
 1. **Clone repository**
 ```bash
 git clone <repository-url>
-cd mjengo
+cd SiteGrid
 ```
 
 2. **Install dependencies**
@@ -235,7 +235,7 @@ php artisan migrate
 ## File Structure
 
 ```
-mjengo/
+SiteGrid/
 ├── app/
 │   ├── Console/Commands/        # Artisan commands
 │   ├── Http/Controllers/        # Route controllers
