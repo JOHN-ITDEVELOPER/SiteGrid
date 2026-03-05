@@ -1,66 +1,286 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Mjengo - Worker Management & Payment Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A comprehensive Laravel-based platform for managing casual workers, site operations, attendance tracking, and financial flows via M-Pesa integration.
 
-## About Laravel
+## Overview
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Mjengo is a complete solution for:
+- **Worker Management** - Recruitment, onboarding, KYC verification, and suspension
+- **Attendance Tracking** - Daily punch-ins, corrections, and evidence collection
+- **Payroll Processing** - Automated invoice generation, payout approvals, M-Pesa disbursement
+- **Financial Control** - Platform revenue tracking, fee analysis, reconciliation
+- **Inventory Management** - Site inventory requests, procurement tracking, progress monitoring
+- **Multi-Channel Access** - Web (Admin/Owner/Foreman/Worker), USSD, API
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Tech Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Backend**: Laravel 10+ (PHP 8.1+)
+- **Database**: MySQL 8.0+
+- **Payment Gateway**: Safaricom M-Pesa Daraja API (STK Push, B2C)
+- **Frontend**: Bootstrap 5, jQuery, Blade templates
+- **Authentication**: Session-based with role-based access control (RBAC)
+- **Queue System**: Laravel Queue (configurable: database, redis, sync)
 
-## Learning Laravel
+## Key Features
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 1. Payment Routing & Revenue Tracking
+- **Multi-account M-Pesa configuration** - Separate accounts for deposits, invoices, payouts
+- **Platform Revenue Dashboard** - Track all invoice payments received from owners
+- **Account Activation & Testing** - OAuth sandbox testing before going live
+- **Audit Trails** - Complete history of all payment routing decisions
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### 2. Financial Reports
+- **Revenue Report** - Payout costs by site and pay cycle
+- **Platform Revenue Report** - Invoice payments received with reconciliation status
+- **Fee Analysis** - Platform fees vs M-Pesa fees breakdown
+- **Reconciliation** - Payout status tracking and dispute management
+- **CSV Export** - Download reports for external analysis
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 2000 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### 3. Worker Management
+- **Roster Management** - Add/remove workers from sites
+- **KYC Verification** - Document upload and admin approval
+- **Attendance Tracking** - Daily punch-ins with GPS/photo evidence
+- **Worker Suspension** - Account suspension with automated payout holds
+- **Worker History** - Complete activity audit log
 
-## Laravel Sponsors
+### 4. Invoice & Payout System
+- **Auto Invoice Generation** - Weekly/bi-weekly invoices for owner billing
+- **Invoice Payment** - STK Push integration for owner payments
+- **Payout Approvals** - Admin approval workflow before B2C disbursement
+- **Payout Adjustments** - Corrections, deductions, and supplemental payments
+- **Payment Status Tracking** - Real-time payout status updates
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+### 5. Site & Owner Management
+- **Site Registration** - Owner onboarding with site details
+- **Site Policies** - Worker count limits, attendance requirements, quality metrics
+- **Wallet Management** - Owner wallet top-ups and balance tracking
+- **Site Settings** - Customizable payment schedules and invoice due dates
 
-### Premium Partners
+### 6. Inventory Management
+- **Procurement Requests** - Worker/site inventory requests
+- **Progress Tracking** - Daily photo evidence collection
+- **Admin Approvals** - Bulk approval workflows
+- **Inventory History** - Complete request audit trail
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[Many](https://www.many.co.uk)**
-- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
-- **[DevSquad](https://devsquad.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[OP.GG](https://op.gg)**
-- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
-- **[Lendio](https://lendio.com)**
+## Installation
+
+### Prerequisites
+```bash
+- PHP 8.1+
+- MySQL 8.0+
+- Composer
+- Node.js 16+ (for frontend assets)
+```
+
+### Setup
+
+1. **Clone repository**
+```bash
+git clone <repository-url>
+cd mjengo
+```
+
+2. **Install dependencies**
+```bash
+composer install
+npm install
+```
+
+3. **Environment configuration**
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+
+4. **Database setup**
+```bash
+php artisan migrate
+php artisan db:seed  # Optional: seed with test data
+```
+
+5. **Build assets**
+```bash
+npm run build  # Production
+npm run dev    # Development
+```
+
+6. **Start application**
+```bash
+php artisan serve
+# Or use XAMPP/LAMP stack
+```
+
+## Configuration
+
+### M-Pesa Integration
+
+1. **Register with Safaricom** - Get Consumer Key/Secret from Daraja portal
+2. **Admin → Settings → Payment Accounts**
+   - Create Escrow Account (for deposits)
+   - Create Invoice Revenue Account (for invoice payments)
+   - Create Payout Account (for worker disbursement)
+3. **Test Connection** - OAuth sandbox test before going live
+4. **Set as Primary** - Mark accounts as primary for each type
+
+### Email Configuration
+```env
+MAIL_DRIVER=smtp
+MAIL_HOST=smtp.mailtrap.io
+MAIL_PORT=465
+MAIL_USERNAME=your_username
+MAIL_PASSWORD=your_password
+```
+
+### Queue Configuration
+```env
+QUEUE_CONNECTION=database  # or redis, sync
+```
+
+## Usage
+
+### Admin Dashboard
+- **Financial Reports** - `/admin/financial/dashboard`
+- **Payment Accounts** - `/admin/settings?tab=accounts`
+- **Payouts** - `/admin/payouts`
+- **Invoices** - `/admin/invoices`
+- **Users** - `/admin/users`
+- **Sites** - `/admin/sites`
+- **Audit Log** - `/admin/audit`
+
+### Owner Portal
+- **Dashboard** - Overview of sites and finances
+- **Invoices** - View and pay invoices via M-Pesa
+- **Sites** - Manage worker rosters
+- **Attendance** - Daily worker attendance verification
+- **Workers** - Worker management and KYC
+
+### Worker App
+- **Check-in** - Daily punch-in with GPS/photo
+- **Dashboard** - Earnings and payout status
+- **History** - Payment history and receipts
+
+### Foreman Mobile
+- **Attendance** - Verify worker punch-ins
+- **Progress** - Log inventory request progress
+
+## API Endpoints
+
+### M-Pesa Callbacks
+```
+POST /api/mpesa/callback - Lipa Na M-Pesa STK/B2C responses
+POST /api/ussd/callback - USSD session handling
+```
+
+### Worker API
+```
+GET  /api/v1/worker - Worker profile
+POST /api/v1/worker/checkin - Daily attendance
+GET  /api/v1/earnings - Earnings summary
+```
+
+## Backfill utility
+
+For historical data migration:
+```bash
+# Backfill platform_revenue for paid invoices (one-time)
+php artisan backfill:platform-revenue --simulate  # Preview
+php artisan backfill:platform-revenue             # Execute
+```
+
+## Database Schema
+
+### Core Tables
+- `users` - All user accounts (admin, owner, worker, foreman)
+- `sites` - Owner work sites
+- `invoices` - Owner billing
+- `payouts` - Worker payments
+- `mpesa_transactions` - M-Pesa callback tracking
+- `attendance` - Daily worker punch-ins
+- `inventory_requests` - Procurement requests
+- `inventory_evidence` - Progress photos
+
+### Financial Tables
+- `platform_accounts` - M-Pesa account configuration
+- `platform_revenue` - Invoice payment audit trail
+- `platform_settings` - System-wide configuration
+- `payout_adjustments` - Corrections & deductions
+
+## Security
+
+- **Password Reset** - Email & SMS OTP flows
+- **Account Suspension** - Automatic payout blocks
+- **Audit Logging** - Complete action history
+- **CSRF Protection** - Token-based form submission
+- **Rate Limiting** - API and login throttling
+- **Data Encryption** - Sensitive credentials stored encrypted
+
+## Troubleshooting
+
+### M-Pesa Test Failing
+- Verify Consumer Key/Secret for Sandbox environment
+- Check IP whitelist in Daraja portal
+- Test with fake details first for OAuth validation
+
+### Platform Revenue Empty
+- Mark Invoice Account as "Primary" in Payment Accounts
+- Ensure invoice was paid via M-Pesa (not manually marked)
+- Check `platform_revenue` table directly
+
+### Missing Migrations
+```bash
+php artisan migrate:reset
+php artisan migrate
+```
+
+## File Structure
+
+```
+mjengo/
+├── app/
+│   ├── Console/Commands/        # Artisan commands
+│   ├── Http/Controllers/        # Route controllers
+│   ├── Models/                  # Eloquent models
+│   ├── Services/                # Business logic
+│   └── Jobs/                    # Queue jobs
+├── database/
+│   ├── migrations/              # Schema changes
+│   └── seeders/                 # Test data
+├── resources/
+│   ├── views/                   # Blade templates
+│   ├── css/                     # Tailwind/CSS
+│   └── js/                      # JavaScript
+├── routes/                      # URL definitions
+└── config/                      # Configuration files
+```
 
 ## Contributing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+1. Create feature branch (`git checkout -b feature/amazing-feature`)
+2. Commit changes (`git commit -m 'feat: add amazing feature'`)
+3. Push to branch (`git push origin feature/amazing-feature`)
+4. Open Pull Request
 
-## Code of Conduct
+## Documentation
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- [Financial Control Quick Start](./FINANCIAL_CONTROL_QUICK_START.md)
+- [M-Pesa Setup Guide](./MPESA_SETUP_GUIDE.md)
+- [USSD Setup Guide](./USSD_SETUP_GUIDE.md)
+- [Navigation Map](./NAVIGATION_MAP.md)
 
-## Security Vulnerabilities
+## Support
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+For issues and feature requests, please use the issue tracker.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Changelog
+
+### v1.0.0 (Mar 6, 2026)
+- Initial release with full payment routing & financial control system
+- Multi-account M-Pesa configuration
+- Platform Revenue tracking dashboard
+- Financial reports suite
+- Payout approval workflow
+- Worker management system
