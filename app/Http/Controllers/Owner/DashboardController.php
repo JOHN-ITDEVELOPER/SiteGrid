@@ -16,8 +16,11 @@ use App\Models\WorkerClaim;
 use App\Models\InventoryStock;
 use App\Models\ProcurementRequest;
 use App\Models\SiteProgressLog;
+use App\Models\PlatformSetting;
+use App\Services\MpesaFeeService;
 use App\Services\MpesaService;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -173,6 +176,7 @@ class DashboardController extends Controller
         $status = $request->input('status');
 
         $sites = Site::where('owner_id', $ownerId)
+            ->with('policy')
             ->when($search, function ($query) use ($search) {
                 $query->where(function ($subQuery) use ($search) {
                     $subQuery->where('name', 'like', "%{$search}%")
@@ -200,6 +204,8 @@ class DashboardController extends Controller
             'owner_mpesa_account' => 'nullable|string|max:50|required_if:payout_method,owner_managed',
         ]);
 
+        $settings = PlatformSetting::firstOrCreate([]);
+        
         $site = Site::create([
             'owner_id' => auth()->id(),
             'name' => $validated['name'],
@@ -207,6 +213,8 @@ class DashboardController extends Controller
             'payout_method' => $validated['payout_method'],
             'owner_mpesa_account' => $validated['owner_mpesa_account'] ?? null,
             'is_completed' => false,
+            'invoice_payment_method' => 'auto_wallet',
+            'invoice_due_days' => $settings->default_invoice_due_days ?? 14,
         ]);
 
         $this->writeAudit($request, 'owner.site.create', 'Site', $site->id, [
@@ -221,6 +229,8 @@ class DashboardController extends Controller
     public function siteDetail(Site $site)
     {
         $this->assertOwnerHasSite($site->id);
+
+        $site->load('policy');
 
         $activeWorkers = $site->workers()->whereNull('ended_at')->count();
         $totalWorkers = $site->workers()->count();
@@ -242,12 +252,14 @@ class DashboardController extends Controller
         $ownerSiteIds = auth()->user()->ownedSites()->pluck('id');
         $siteId = $request->input('site_id');
         $filter = $request->input('filter');
+        $status = $request->input('status', 'active'); // active, inactive, all
 
         $workers = SiteWorker::with(['user', 'site'])
             ->whereIn('site_id', $ownerSiteIds)
-            ->whereNull('ended_at')
+            ->when($status === 'active', fn($query) => $query->whereNull('ended_at'))
+            ->when($status === 'inactive', fn($query) => $query->whereNotNull('ended_at'))
             ->when($siteId, fn($query) => $query->where('site_id', $siteId))
-            ->latest()
+            ->latest('created_at')
             ->paginate(20)
             ->withQueryString();
 
@@ -260,7 +272,7 @@ class DashboardController extends Controller
 
         $sites = Site::whereIn('id', $ownerSiteIds)->select('id', 'name')->orderBy('name')->get();
 
-        return view('owner.workforce', compact('workers', 'attendanceByWorker', 'sites', 'siteId', 'filter'));
+        return view('owner.workforce', compact('workers', 'attendanceByWorker', 'sites', 'siteId', 'filter', 'status'));
     }
 
     public function payroll(Request $request)
@@ -402,36 +414,97 @@ class DashboardController extends Controller
         return back()->with('success', 'Dispute acknowledged and logged.');
     }
 
-    public function uploadInvoiceProof(Request $request, Invoice $invoice)
+    public function retryInvoicePayment(Request $request, Invoice $invoice)
     {
+        $expectsJson = $request->expectsJson() || $request->ajax();
+
         $this->assertOwnerHasSite($invoice->site_id);
 
-        $validated = $request->validate([
-            'reason' => 'required|string|min:5|max:500',
-            'proof_reference' => 'nullable|string|max:255',
-            'proof_file' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
-            'confirm_2fa' => 'accepted',
-        ]);
+        if ($invoice->status === 'paid') {
+            if ($expectsJson) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invoice is already paid.',
+                ], 422);
+            }
 
-        $proofPath = null;
-        if ($request->hasFile('proof_file')) {
-            $proofPath = $request->file('proof_file')->store('invoice-proofs', 'public');
+            return back()->with('error', 'Invoice is already paid.');
         }
 
-        $existingNotes = $invoice->notes ? $invoice->notes . PHP_EOL : '';
-        $invoice->notes = $existingNotes . '[OWNER PROOF] ref=' . ($validated['proof_reference'] ?? 'n/a') . '; file=' . ($proofPath ?? 'none') . '; reason=' . $validated['reason'];
-        $invoice->save();
+        if ($invoice->payment_method !== 'manual_mpesa') {
+            if ($expectsJson) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manual retry only available for M-Pesa payment method.',
+                ], 422);
+            }
 
-        $this->writeAudit($request, 'owner.invoice.upload_proof', 'Invoice', $invoice->id, [
-            'reason' => $validated['reason'],
-            '2fa_confirmed' => true,
-            'proof_reference' => $validated['proof_reference'] ?? null,
-            'proof_file' => $proofPath,
+            return back()->with('error', 'Manual retry only available for M-Pesa payment method.');
+        }
+
+        $owner = $invoice->site->owner;
+        if (!$owner || !$owner->phone) {
+            if ($expectsJson) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner phone number not configured. Contact support.',
+                ], 422);
+            }
+
+            return back()->with('error', 'Owner phone number not configured. Contact support.');
+        }
+
+        // Normalize phone to 254XXXXXXXX format
+        $phone = $owner->phone;
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        if (!str_starts_with($phone, '254')) {
+            if (str_starts_with($phone, '0')) {
+                $phone = '254' . substr($phone, 1);
+            } else {
+                $phone = '254' . $phone;
+            }
+        }
+
+        $mpesaService = app(MpesaService::class);
+        $result = $mpesaService->stkPushInvoice($phone, $invoice);
+
+        $stkInitiated = (bool) ($result['success'] ?? false);
+        $errorMsg = $result['message'] ?? 'Unknown error';
+        $logMsg = $stkInitiated 
+            ? "STK Retry: Initiated new STK push to {$phone}" 
+            : "STK Retry: Failed - {$errorMsg}";
+
+        $this->writeAudit($request, 'owner.invoice.retry_payment', 'Invoice', $invoice->id, [
+            'stk_initiated' => $stkInitiated,
+            'owner_phone' => $phone,
+            'payment_method' => $invoice->payment_method,
             'site_id' => $invoice->site_id,
-            'invoice_status' => $invoice->status,
+            'message' => $logMsg,
         ]);
 
-        return back()->with('success', 'Invoice payment proof uploaded successfully.');
+        if ($stkInitiated) {
+            if ($expectsJson) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payment retry initiated. Check your phone for STK prompt.',
+                    'checkout_request_id' => $result['checkout_request_id'] ?? null,
+                ]);
+            }
+
+            return back()->with('success', 'Payment retry initiated. Check your phone for STK prompt.');
+        } else {
+            $fallbackMessage = 'STK prompt could not be sent. Please pay via: Paybill 522533, Account: INV-' . str_pad($invoice->id, 8, '0', STR_PAD_LEFT);
+
+            if ($expectsJson) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMsg ?: $fallbackMessage,
+                    'fallback_message' => $fallbackMessage,
+                ], 500);
+            }
+
+            return back()->with('info', $fallbackMessage);
+        }
     }
 
     protected function assertOwnerHasSite(int $siteId): void
@@ -482,17 +555,45 @@ class DashboardController extends Controller
 
         $this->assertOwnerHasSite($validated['site_id']);
 
+        // Check if site is locked down
+        $site = Site::findOrFail($validated['site_id']);
+        if ($site->policy && $site->policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. Cannot add workers at this time.'])->withInput();
+        }
+
+        $existingByEmail = null;
+        if (!empty($validated['email'])) {
+            $existingByEmail = User::where('email', $validated['email'])->first();
+        }
+
         // Check if worker exists, otherwise create
         $user = User::where('phone', $validated['phone'])->first();
+
+        if ($existingByEmail && (!$user || $existingByEmail->id !== $user->id)) {
+            return back()->withErrors([
+                'email' => 'That email is already linked to another account. Please use a different email or leave it blank.',
+            ])->withInput();
+        }
+
         if (!$user) {
-            $user = User::create([
-                'name' => $validated['name'],
-                'phone' => $validated['phone'],
-                'email' => $validated['email'],
-                'password' => bcrypt('default123'),
-                'role' => 'worker',
-                'kyc_status' => 'pending',
-            ]);
+            try {
+                $user = User::create([
+                    'name' => $validated['name'],
+                    'phone' => $validated['phone'],
+                    'email' => $validated['email'],
+                    'password' => bcrypt('default123'),
+                    'role' => 'worker',
+                    'kyc_status' => 'pending',
+                ]);
+            } catch (QueryException $e) {
+                if ((int) $e->getCode() === 23000) {
+                    return back()->withErrors([
+                        'email' => 'That email is already linked to another account. Please use a different email or leave it blank.',
+                    ])->withInput();
+                }
+
+                throw $e;
+            }
         }
 
         // Check if already assigned to site
@@ -537,18 +638,65 @@ class DashboardController extends Controller
     {
         $this->assertOwnerHasSite($worker->site_id);
 
+        // Check if site is locked down
+        $site = Site::findOrFail($worker->site_id);
+        if ($site->policy && $site->policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. Cannot update workers at this time.']);
+        }
+
         $validated = $request->validate([
+            'site_id' => 'required|exists:sites,id',
+            'name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
             'role' => 'nullable|string|max:100',
             'is_foreman' => 'boolean',
             'daily_rate' => 'required|numeric|min:0',
             'weekly_rate' => 'required|numeric|min:0',
         ]);
 
+        $this->assertOwnerHasSite((int) $validated['site_id']);
+
+        $phoneExists = User::where('phone', $validated['phone'])
+            ->where('id', '!=', $worker->user_id)
+            ->exists();
+
+        if ($phoneExists) {
+            return back()->withErrors([
+                'phone' => 'That phone number is already linked to another account. Please use a different number.',
+            ])->withInput();
+        }
+
+        $hasActiveAssignmentAtTargetSite = SiteWorker::where('site_id', $validated['site_id'])
+            ->where('user_id', $worker->user_id)
+            ->whereNull('ended_at')
+            ->where('id', '!=', $worker->id)
+            ->exists();
+
+        if ($hasActiveAssignmentAtTargetSite) {
+            return back()->withErrors([
+                'site_id' => 'This worker already has an active assignment at the selected site.',
+            ])->withInput();
+        }
+
         $oldRate = $worker->daily_rate;
+        $oldSiteId = $worker->site_id;
+        $oldName = $worker->user->name;
+        $oldPhone = $worker->user->phone;
+
+        $worker->user->update([
+            'name' => $validated['name'],
+            'phone' => $validated['phone'],
+        ]);
+
         $worker->update($validated);
 
         $this->writeAudit($request, 'owner.worker.update', 'SiteWorker', $worker->id, [
-            'site_id' => $worker->site_id,
+            'site_id_from' => $oldSiteId,
+            'site_id_to' => $worker->site_id,
+            'worker_name_from' => $oldName,
+            'worker_name_to' => $validated['name'],
+            'phone_from' => $oldPhone,
+            'phone_to' => $validated['phone'],
             'rate_from' => $oldRate,
             'rate_to' => $validated['daily_rate'],
         ]);
@@ -573,6 +721,35 @@ class DashboardController extends Controller
         ]);
 
         return back()->with('success', 'Worker deactivated successfully.');
+    }
+
+    public function reactivateWorker(Request $request, SiteWorker $worker)
+    {
+        $this->assertOwnerHasSite($worker->site_id);
+
+        if (is_null($worker->ended_at)) {
+            return back()->withErrors(['error' => 'Worker is already active.']);
+        }
+
+        // Check if worker already has an active assignment at this site
+        $hasActiveAssignment = SiteWorker::where('site_id', $worker->site_id)
+            ->where('user_id', $worker->user_id)
+            ->whereNull('ended_at')
+            ->where('id', '!=', $worker->id)
+            ->exists();
+
+        if ($hasActiveAssignment) {
+            return back()->withErrors(['error' => 'Worker already has an active assignment at this site.']);
+        }
+
+        $worker->update(['ended_at' => null]);
+
+        $this->writeAudit($request, 'owner.worker.reactivate', 'SiteWorker', $worker->id, [
+            'site_id' => $worker->site_id,
+            'worker_name' => $worker->user->name,
+        ]);
+
+        return back()->with('success', 'Worker reactivated successfully.');
     }
 
     // ============================================
@@ -658,6 +835,92 @@ class DashboardController extends Controller
         return back()->with('success', 'Attendance recorded and payroll updated automatically.');
     }
 
+    public function bulkMarkAttendance(Request $request)
+    {
+        $input = $request->all();
+        
+        if (isset($input['attendance']) && is_array($input['attendance'])) {
+            foreach ($input['attendance'] as $key => $record) {
+                // Convert empty strings to null for time fields
+                if (isset($record['check_in']) && (trim($record['check_in']) === '' || $record['check_in'] === null)) {
+                    $input['attendance'][$key]['check_in'] = null;
+                } else if (isset($record['check_in']) && !empty($record['check_in'])) {
+                    // HTML5 time input sends H:i format, convert to H:i:s for validation
+                    if (strlen($record['check_in']) === 5) { // "HH:mm" is 5 chars
+                        $input['attendance'][$key]['check_in'] = $record['check_in'] . ':00';
+                    }
+                }
+                
+                if (isset($record['check_out']) && (trim($record['check_out']) === '' || $record['check_out'] === null)) {
+                    $input['attendance'][$key]['check_out'] = null;
+                } else if (isset($record['check_out']) && !empty($record['check_out'])) {
+                    // HTML5 time input sends H:i format, convert to H:i:s for validation
+                    if (strlen($record['check_out']) === 5) { // "HH:mm" is 5 chars
+                        $input['attendance'][$key]['check_out'] = $record['check_out'] . ':00';
+                    }
+                }
+            }
+        }
+        
+        $validated = \Illuminate\Support\Facades\Validator::make($input, [
+            'date' => 'required|date|before_or_equal:today',
+            'attendance' => 'required|array',
+            'attendance.*.worker_id' => 'required|exists:users,id',
+            'attendance.*.site_id' => 'required|exists:sites,id',
+            'attendance.*.is_present' => 'required|boolean',
+            'attendance.*.hours' => 'nullable|numeric|min:0|max:24',
+            'attendance.*.check_in' => 'nullable|date_format:H:i:s',
+            'attendance.*.check_out' => 'nullable|date_format:H:i:s',
+            'attendance.*.reason' => 'nullable|string|max:500',
+        ])->validate();
+
+        // Verify owner has access to all sites
+        foreach ($validated['attendance'] as $record) {
+            $this->assertOwnerHasSite($record['site_id']);
+        }
+
+        // Owners can only update attendance from the current week
+        $startOfWeek = now()->startOfWeek();
+        if ($validated['date'] < $startOfWeek->toDateString()) {
+            return back()->withErrors(['date' => 'Cannot update attendance from previous weeks. Current week started on ' . $startOfWeek->format('M d, Y')]);
+        }
+
+        $count = 0;
+        foreach ($validated['attendance'] as $record) {
+            $attendance = Attendance::updateOrCreate(
+                [
+                    'site_id' => $record['site_id'],
+                    'worker_id' => $record['worker_id'],
+                    'date' => $validated['date'],
+                ],
+                [
+                    'is_present' => $record['is_present'],
+                    'hours' => $record['hours'] ?? 0,
+                    'check_in' => $record['check_in'] ?? null,
+                    'check_out' => $record['check_out'] ?? null,
+                    'source' => 'owner_web',
+                ]
+            );
+
+            // Update payouts for this worker
+            $this->updatePayoutsForAttendance(
+                $record['site_id'],
+                $record['worker_id'],
+                $validated['date'],
+                $record['hours'] ?? 0
+            );
+
+            $count++;
+        }
+
+        $this->writeAudit($request, 'owner.attendance.bulk-mark', 'Attendance', 0, [
+            'date' => $validated['date'],
+            'count' => $count,
+        ]);
+
+        return back()->with('success', "Attendance recorded for {$count} workers and payroll updated automatically.");
+    }
+
     /**
      * Update payouts in real-time when attendance is recorded (Option C workflow)
      */
@@ -703,13 +966,13 @@ class DashboardController extends Controller
 
             // Update payout amounts
             $grossAmount = $totalHours * $hourlyRate;
-            $platformFee = $grossAmount * 0.05;
-            $mpesaFee = 25;
-            $netAmount = $grossAmount; // Full amount to worker
+            $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($grossAmount);
+            $mpesaFee = $feeBreakdown['fee'];
+            $netAmount = $grossAmount; // Worker receives full earned amount
 
             $payout->update([
                 'gross_amount' => $grossAmount,
-                'platform_fee' => $platformFee,
+                'platform_fee' => 0,
                 'mpesa_fee' => $mpesaFee,
                 'net_amount' => $netAmount,
             ]);
@@ -753,6 +1016,12 @@ class DashboardController extends Controller
         ]);
 
         $this->assertOwnerHasSite($validated['site_id']);
+
+        // Check if site is locked down
+        $site = Site::findOrFail($validated['site_id']);
+        if ($site->policy && $site->policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. Cannot create pay cycles at this time.'])->withInput();
+        }
 
         // Check for overlapping pay cycles
         $overlapping = PayCycle::where('site_id', $validated['site_id'])
@@ -846,15 +1115,15 @@ class DashboardController extends Controller
         // Create payout entries for each worker
         foreach ($workerTotals as $workerData) {
             $grossAmount = $workerData['gross_amount'];
-            $platformFee = $grossAmount * 0.05;
-            $mpesaFee = 25;
+            $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($grossAmount);
+            $mpesaFee = $feeBreakdown['fee'];
             $netAmount = $grossAmount;
 
             Payout::create([
                 'pay_cycle_id' => $payCycle->id,
                 'worker_id' => $workerData['worker_id'],
                 'gross_amount' => $grossAmount,
-                'platform_fee' => $platformFee,
+                'platform_fee' => 0,
                 'mpesa_fee' => $mpesaFee,
                 'net_amount' => $netAmount,
                 'status' => 'pending',
@@ -972,23 +1241,11 @@ class DashboardController extends Controller
     }
 
     /**
-     * Check M-Pesa transaction status via AJAX
+     * Check M-Pesa transaction status via AJAX (handles both wallet top-ups and invoice payments)
      */
     public function checkTransactionStatus($checkoutRequestId)
     {
-        $wallet = auth()->user()->wallet;
-        
-        if (!$wallet) {
-            return response()->json([
-                'status' => 'not_found',
-                'message' => 'Wallet not found'
-            ], 404);
-        }
-        
-        $transaction = \App\Models\MpesaTransaction::where('checkout_request_id', $checkoutRequestId)
-            ->where('related_model', \App\Models\OwnerWallet::class)
-            ->where('related_id', $wallet->id)
-            ->first();
+        $transaction = \App\Models\MpesaTransaction::where('checkout_request_id', $checkoutRequestId)->first();
 
         if (!$transaction) {
             return response()->json([
@@ -997,13 +1254,37 @@ class DashboardController extends Controller
             ], 404);
         }
 
+        // Verify owner has access to this transaction
+        if ($transaction->related_model === \App\Models\OwnerWallet::class) {
+            $wallet = auth()->user()->wallet;
+            if (!$wallet || $transaction->related_id !== $wallet->id) {
+                return response()->json([
+                    'status' => 'unauthorized',
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+        } elseif ($transaction->related_model === \App\Models\Invoice::class) {
+            $invoice = \App\Models\Invoice::find($transaction->related_id);
+            if (!$invoice || $invoice->site->owner_id !== auth()->id()) {
+                return response()->json([
+                    'status' => 'unauthorized',
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+        }
+
         $response = [
             'status' => $transaction->status,
             'amount' => $transaction->amount,
+            'type' => $transaction->related_model === \App\Models\Invoice::class ? 'invoice' : 'wallet',
         ];
 
         if ($transaction->status === 'completed') {
-            $response['message'] = 'Payment successful! Your wallet has been credited with KES ' . number_format($transaction->amount, 2);
+            if ($transaction->related_model === \App\Models\Invoice::class) {
+                $response['message'] = 'Invoice payment successful! Payment of KES ' . number_format($transaction->amount, 2) . ' received.';
+            } else {
+                $response['message'] = 'Payment successful! Your wallet has been credited with KES ' . number_format($transaction->amount, 2);
+            }
             $response['receipt'] = $transaction->mpesa_receipt_number;
         } elseif ($transaction->status === 'failed') {
             $response['message'] = 'Payment failed: ' . ($transaction->result_description ?? 'Payment was cancelled or declined');
@@ -1021,36 +1302,49 @@ class DashboardController extends Controller
     public function claims(Request $request)
     {
         $ownerSiteIds = auth()->user()->ownedSites()->pluck('id');
-        $status = $request->input('status');
+        $statusFilter = $request->input('status');
 
-        // For now showing payouts as "claims" - would have separate claims table
-        $claims = Payout::with(['worker', 'payCycle.site'])
-            ->whereHas('payCycle', function ($query) use ($ownerSiteIds) {
-                $query->whereIn('site_id', $ownerSiteIds);
-            })
-            ->when($status, fn($query) => $query->where('status', $status))
-            ->latest()
+        // Query actual worker claims (withdrawal requests from workers)
+        $query = WorkerClaim::with(['worker', 'site'])
+            ->whereIn('site_id', $ownerSiteIds);
+
+        // Apply status filter
+        if ($statusFilter === 'pending') {
+            // Pending claims (awaiting owner action)
+            $query->whereIn('status', ['pending_owner', 'approved']);
+        } elseif ($statusFilter === 'completed') {
+            // Completed/paid claims
+            $query->where('status', 'paid');
+        } elseif ($statusFilter === 'failed') {
+            // Rejected claims
+            $query->where('status', 'rejected');
+        }
+
+        $claims = $query->latest('requested_at')
             ->paginate(20)
             ->withQueryString();
 
+        // Calculate summary stats
         $summary = [
-            'pending' => Payout::whereHas('payCycle', function ($q) use ($ownerSiteIds) {
-                $q->whereIn('site_id', $ownerSiteIds);
-            })->where('status', 'pending')->count(),
-            'approved' => Payout::whereHas('payCycle', function ($q) use ($ownerSiteIds) {
-                $q->whereIn('site_id', $ownerSiteIds);
-            })->where('status', 'completed')->count(),
-            'rejected' => Payout::whereHas('payCycle', function ($q) use ($ownerSiteIds) {
-                $q->whereIn('site_id', $ownerSiteIds);
-            })->where('status', 'failed')->count(),
+            'pending' => WorkerClaim::whereIn('site_id', $ownerSiteIds)
+                ->whereIn('status', ['pending_owner', 'approved'])
+                ->count(),
+            'approved' => WorkerClaim::whereIn('site_id', $ownerSiteIds)
+                ->where('status', 'paid')
+                ->count(),
+            'rejected' => WorkerClaim::whereIn('site_id', $ownerSiteIds)
+                ->where('status', 'rejected')
+                ->count(),
         ];
+
+        $status = $statusFilter; // Pass the original filter value for view
 
         return view('owner.claims', compact('claims', 'summary', 'status'));
     }
 
-    public function approveClaim(Request $request, Payout $payout)
+    public function approveClaim(Request $request, WorkerClaim $claim)
     {
-        $this->assertOwnerHasSite($payout->payCycle->site_id);
+        $this->assertOwnerHasSite($claim->site_id);
 
         $validated = $request->validate([
             'action' => 'required|in:approve,reject',
@@ -1058,27 +1352,30 @@ class DashboardController extends Controller
         ]);
 
         if ($validated['action'] === 'reject') {
-            $oldStatus = $payout->status;
-            $payout->status = 'failed';
-            $payout->error_message = $validated['notes'] ?? 'Rejected by owner';
-            $payout->save();
+            $oldStatus = $claim->status;
+            $claim->status = 'rejected';
+            $claim->rejection_reason = $validated['notes'] ?? 'Rejected by owner';
+            $claim->rejected_by = auth()->id();
+            $claim->save();
 
-            $this->writeAudit($request, 'owner.claim.reject', 'Payout', $payout->id, [
-                'site_id' => $payout->payCycle->site_id,
+            $this->writeAudit($request, 'owner.claim.reject', 'WorkerClaim', $claim->id, [
+                'site_id' => $claim->site_id,
+                'worker_id' => $claim->worker_id,
                 'status_from' => $oldStatus,
-                'status_to' => $payout->status,
+                'status_to' => $claim->status,
+                'amount' => $claim->requested_amount,
                 'notes' => $validated['notes'],
             ]);
 
-            return back()->with('success', 'Claim rejected successfully.');
+            return back()->with('success', 'Claim rejected and worker notified.');
         }
 
         // Approval flow
-        $site = $payout->payCycle->site;
+        $site = $claim->site;
         
         // Check if site uses platform-managed payouts
         if ($site->payout_method === 'platform_managed') {
-            // Check wallet balance - NEW: Owner pays worker wage + all fees
+            // Check wallet balance - Owner pays requested amount + all fees
             $owner = auth()->user();
             $wallet = $owner->wallet;
             
@@ -1086,64 +1383,74 @@ class DashboardController extends Controller
                 return back()->with('error', 'Wallet not found. Please set up your wallet first.');
             }
 
-            // Total cost to owner = worker net amount + platform fee + M-Pesa fee
-            $totalCostToOwner = $payout->net_amount + $payout->platform_fee + $payout->mpesa_fee;
+            // Owner covers M-Pesa transfer cost; worker receives full requested amount.
+            $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($claim->requested_amount, $claim->worker->phone);
+            $platformFee = 0;
+            $mpesaFee = $feeBreakdown['fee'];
+            $totalCostToOwner = $claim->requested_amount + $mpesaFee;
 
             if (!$wallet->hasSufficientBalance($totalCostToOwner)) {
-                return back()->with('error', "Insufficient wallet balance. Required: KES " . number_format($totalCostToOwner, 2) . " (Worker: KES " . number_format($payout->net_amount, 2) . " + Fees: KES " . number_format($payout->platform_fee + $payout->mpesa_fee, 2) . "), Available: KES " . number_format($wallet->balance, 2) . ". Please top up your wallet.");
+                return back()->with('error', 
+                    "Insufficient wallet balance. Required: KES " . number_format($totalCostToOwner, 2) . 
+                    " (Worker: KES " . number_format($claim->requested_amount, 2) . 
+                    " + M-Pesa fee: KES " . number_format($mpesaFee, 2) . "), " .
+                    "Available: KES " . number_format($wallet->balance, 2) . ". Please top up your wallet."
+                );
             }
 
-            // Deduct full amount from wallet (worker amount + all fees)
+            // Deduct full amount from wallet
             try {
                 $wallet->debit(
                     $totalCostToOwner,
-                    'PayoutAndFees',
-                    $payout->id,
-                    "Worker payout KES {$payout->net_amount} + Platform fee KES {$payout->platform_fee} + M-Pesa fee KES {$payout->mpesa_fee} for {$payout->worker->name} - Site: {$site->name}"
+                    'WorkerClaim',
+                    $claim->id,
+                    "Worker withdrawal KES {$claim->requested_amount} + M-Pesa fee KES {$mpesaFee} for {$claim->worker->name} - Site: {$site->name}"
                 );
             } catch (\Exception $e) {
                 return back()->with('error', 'Failed to deduct from wallet: ' . $e->getMessage());
             }
 
-            // Initiate M-Pesa B2C payment - Worker gets full gross amount (no fee deduction)
+            // Initiate M-Pesa B2C payment
             $mpesaService = new MpesaService();
-            $workerPhone = $payout->worker->phone;
+            $workerPhone = $claim->worker->phone;
             
             // Ensure phone is in correct format (254XXXXXXXXX)
             if (!str_starts_with($workerPhone, '254')) {
-                // Try to format if it starts with 0 or +254
                 $workerPhone = preg_replace('/^(\+?254|0)/', '254', $workerPhone);
             }
 
             $result = $mpesaService->b2c(
                 $workerPhone,
-                $payout->net_amount, // Full amount, fees already deducted from owner's wallet
-                $payout->id,
-                'App\\Models\\Payout'
+                $claim->requested_amount,
+                $claim->id,
+                'App\\Models\\WorkerClaim'
             );
 
             if ($result['success']) {
-                $payout->status = 'processing'; // Will be updated to 'paid' by callback
-                $payout->mpesa_transaction_id = $result['transaction_id'] ?? null;
-                $payout->save();
+                $claim->status = 'processing'; // Will be updated to 'paid' by callback
+                $claim->transaction_ref = $result['transaction_id'] ?? null;
+                $claim->approved_by_owner = auth()->id();
+                $claim->approved_at = now();
+                $claim->save();
 
-                $this->writeAudit($request, 'owner.claim.approve_auto_disbursed', 'Payout', $payout->id, [
+                $this->writeAudit($request, 'owner.claim.approve_disbursed', 'WorkerClaim', $claim->id, [
                     'site_id' => $site->id,
-                    'worker_amount' => $payout->net_amount,
-                    'platform_fee' => $payout->platform_fee,
-                    'mpesa_fee' => $payout->mpesa_fee,
+                    'worker_id' => $claim->worker_id,
+                    'worker_amount' => $claim->requested_amount,
+                    'platform_fee' => $platformFee,
+                    'mpesa_fee' => $mpesaFee,
                     'total_owner_cost' => $totalCostToOwner,
                     'mpesa_transaction_id' => $result['transaction_id'],
                     'notes' => $validated['notes'],
                 ]);
 
-                return back()->with('success', 'Claim approved and payment initiated via M-Pesa. Worker will receive KES ' . number_format($payout->net_amount, 2) . ' shortly.');
+                return back()->with('success', 'Claim approved and payment initiated via M-Pesa. Worker will receive KES ' . number_format($claim->requested_amount, 2) . ' shortly.');
             } else {
                 // Refund wallet if M-Pesa failed
                 $wallet->credit(
                     $totalCostToOwner,
                     'refund',
-                    $payout->id,
+                    $claim->id,
                     "Refund: M-Pesa payment failed - {$result['message']}"
                 );
 
@@ -1151,20 +1458,25 @@ class DashboardController extends Controller
             }
         }
 
-        // Owner-managed payout method - just approve
-        $oldStatus = $payout->status;
-        $payout->status = 'approved';
-        $payout->save();
+        // Owner-managed payout method - just approve for manual processing
+        $oldStatus = $claim->status;
+        $claim->status = 'approved';
+        $claim->approved_by_owner = auth()->id();
+        $claim->approved_at = now();
+        $claim->save();
 
-        $this->writeAudit($request, 'owner.claim.approve', 'Payout', $payout->id, [
+        $this->writeAudit($request, 'owner.claim.approve', 'WorkerClaim', $claim->id, [
             'site_id' => $site->id,
+            'worker_id' => $claim->worker_id,
             'status_from' => $oldStatus,
-            'status_to' => $payout->status,
+            'status_to' => $claim->status,
+            'amount' => $claim->requested_amount,
             'notes' => $validated['notes'],
         ]);
 
-        return back()->with('success', 'Claim approved successfully. Please process payment manually.');
+        return back()->with('success', 'Claim approved. Please process payment manually to the owner M-Pesa account.');
     }
+
 
     public function overrideWithdrawalWindow(Request $request, WorkerClaim $claim)
     {
@@ -1188,16 +1500,17 @@ class DashboardController extends Controller
             return back()->with('error', 'Wallet not found. Please set up your wallet first.');
         }
 
-        // For worker claims, estimate fees
-        $platformFee = round($claim->requested_amount * 0.05, 2); // 5% platform fee
-        $mpesaFee = 25; // Fixed M-Pesa fee
-        $totalCost = $claim->requested_amount + $platformFee + $mpesaFee;
+        // Owner covers M-Pesa transfer fee; no platform fee is charged here.
+        $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($claim->requested_amount, $claim->worker->phone);
+        $platformFee = 0;
+        $mpesaFee = $feeBreakdown['fee'];
+        $totalCost = $claim->requested_amount + $mpesaFee;
 
         if (!$wallet->hasSufficientBalance($totalCost)) {
             return back()->with('error', 
                 "Insufficient wallet balance for override. Required: KES " . number_format($totalCost, 2) . 
                 " (Worker: KES " . number_format($claim->requested_amount, 2) . 
-                " + Fees: KES " . number_format($platformFee + $mpesaFee, 2) . "), " .
+                " + M-Pesa fee: KES " . number_format($mpesaFee, 2) . "), " .
                 "Available: KES " . number_format($wallet->balance, 2)
             );
         }

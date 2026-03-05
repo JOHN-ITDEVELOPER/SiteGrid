@@ -17,7 +17,11 @@ class SettingsController extends Controller
         $settings = PlatformSetting::firstOrCreate([]);
         $sites = Site::select('id', 'name')->get();
 
-        return view('admin.settings.edit', compact('settings', 'sites'));
+        // Load platform accounts for the accounts tab
+        $escrowAccount = \App\Models\PlatformAccount::where('account_type', 'deposit')->first();
+        $revenueAccount = \App\Models\PlatformAccount::where('account_type', 'invoice')->first();
+
+        return view('admin.settings.edit', compact('settings', 'sites', 'escrowAccount', 'revenueAccount'));
     }
 
     public function update(Request $request)
@@ -106,6 +110,7 @@ class SettingsController extends Controller
                 'fee_percentage' => 'nullable|numeric|min:0|max:100',
                 'late_fee_amount' => 'required|numeric|min:0',
                 'invoice_reminder_days' => 'required|string',
+                'default_invoice_due_days' => 'required|integer|min:1|max:90',
             ],
             'payroll' => [
                 'payout_window_start_day' => 'required|integer|min:1|max:7',
@@ -275,6 +280,230 @@ class SettingsController extends Controller
             'session_id' => 'TEST-' . uniqid(),
             'menu' => $menu,
             'timeout' => $settings->ussd_session_timeout_seconds,
+        ]);
+    }
+
+    /**
+     * Manage Platform Payment Accounts
+     * Route: /admin/accounts
+     */
+    public function accounts()
+    {
+        $deposit_account = \App\Models\PlatformAccount::ofType('deposit')->primary('deposit');
+        $invoice_account = \App\Models\PlatformAccount::ofType('invoice')->primary('invoice');
+        $payout_account = \App\Models\PlatformAccount::ofType('payout')->primary('payout');
+
+        $all_accounts = \App\Models\PlatformAccount::orderBy('account_type')->get();
+
+        return view('admin.settings.accounts', compact(
+            'deposit_account',
+            'invoice_account',
+            'payout_account',
+            'all_accounts'
+        ));
+    }
+
+    /**
+     * Create or update payment account
+     */
+    public function saveAccount(Request $request)
+    {
+        $validated = $request->validate([
+            'account_type' => 'required|in:deposit,invoice,payout',
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'shortcode' => 'required|string|max:20',
+            'consumer_key' => 'required|string',
+            'consumer_secret' => 'required|string',
+            'passkey' => 'required|string',
+            'is_primary' => 'boolean',
+        ]);
+
+        $account_type = $validated['account_type'];
+        
+        // Find or create account
+        $account = \App\Models\PlatformAccount::firstOrCreate(
+            ['shortcode' => $validated['shortcode']],
+            [
+                'account_type' => $account_type,
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'provider' => 'mpesa',
+                'status' => 'testing',
+                'credentials' => [
+                    'consumer_key' => $validated['consumer_key'],
+                    'consumer_secret' => $validated['consumer_secret'],
+                    'passkey' => $validated['passkey'],
+                ],
+                'is_primary' => $validated['is_primary'] ?? false,
+                'created_by' => auth()->id(),
+            ]
+        );
+
+        // Update credentials if account already exists
+        if (!$account->wasRecentlyCreated) {
+            $account->update([
+                'name' => $validated['name'],
+                'credentials' => [
+                    'consumer_key' => $validated['consumer_key'],
+                    'consumer_secret' => $validated['consumer_secret'],
+                    'passkey' => $validated['passkey'],
+                ],
+                'is_primary' => $validated['is_primary'] ?? false,
+                'updated_by' => auth()->id(),
+            ]);
+        }
+
+        // If marked primary, unmark others of same type
+        if ($validated['is_primary'] ?? false) {
+            \App\Models\PlatformAccount::where('account_type', $account_type)
+                ->where('id', '!=', $account->id)
+                ->update(['is_primary' => false]);
+
+            // Update platform setting to reference this account
+            PlatformSetting::firstOrCreate([])->update([
+                "platform_{$account_type}_account_id" => $account->id,
+            ]);
+        }
+
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'payment_account.save',
+            'entity_type' => 'PlatformAccount',
+            'entity_id' => $account->id,
+            'meta' => [
+                'type' => $account_type,
+                'shortcode' => $validated['shortcode'],
+                'is_primary' => $validated['is_primary'] ?? false,
+            ],
+            'ip_address' => $request->ip(),
+        ]);
+
+        return redirect()->route('admin.settings.edit', ['tab' => 'accounts'])
+            ->with('success', ucfirst($account_type) . ' account saved successfully');
+    }
+
+    /**
+     * Test payment account connection
+     */
+    public function testAccount(Request $request, $id)
+    {
+        $account = \App\Models\PlatformAccount::findOrFail($id);
+
+        try {
+            $key = $account->getCredential('consumer_key');
+            $secret = $account->getCredential('consumer_secret');
+
+            if (!$key || !$secret) {
+                throw new \Exception('Consumer key or secret not found in account credentials');
+            }
+
+            $response = Http::withBasicAuth($key, $secret)
+                ->timeout(5)
+                ->get('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials');
+
+            if ($response->successful()) {
+                $tokenExpiresIn = $response->json('expires_in');
+                $account->markAsActive();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Account verified successfully (Sandbox)',
+                    'shortcode' => $account->shortcode,
+                    'account_name' => $account->name,
+                    'token_expires' => $tokenExpiresIn,
+                    'note' => "Sandbox test passed. Token valid for {$tokenExpiresIn} seconds (~1 hour). Using: sandbox.safaricom.co.ke",
+                ]);
+            }
+
+            $errorBody = $response->body();
+            $errorJson = $response->json();
+            
+            throw new \Exception(
+                'Sandbox API returned ' . $response->status() . ': ' . 
+                ($errorJson['error_description'] ?? $errorBody)
+            );
+        } catch (\Exception $e) {
+            $account->markAsFailed($e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'hint' => 'Check that Consumer Key and Secret are correct for the Sandbox environment',
+            ], 400);
+        }
+    }
+
+    /**
+     * Activate payment account
+     */
+    public function activateAccount(Request $request, $id)
+    {
+        $account = \App\Models\PlatformAccount::findOrFail($id);
+        
+        if ($account->status !== 'active') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Account must be tested and active before activation',
+            ], 400);
+        }
+        
+        $account->update([
+            'status' => 'active',
+            'updated_by' => auth()->id(),
+        ]);
+        
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'payment_account.activate',
+            'entity_type' => 'PlatformAccount',
+            'entity_id' => $account->id,
+            'meta' => ['account_type' => $account->account_type],
+            'ip_address' => $request->ip(),
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Account activated successfully',
+        ]);
+    }
+
+    /**
+     * Deactivate payment account
+     */
+    public function deactivateAccount(Request $request, $id)
+    {
+        $account = \App\Models\PlatformAccount::findOrFail($id);
+        
+        // Verify deactivation won't break active transactions
+        $active_transactions = \App\Models\MpesaTransaction::where('platform_account_id', $account->id)
+            ->whereIn('status', ['pending', 'initiated'])
+            ->count();
+        
+        if ($active_transactions > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot deactivate: {$active_transactions} active transactions",
+            ], 400);
+        }
+        
+        $account->update([
+            'status' => 'inactive',
+            'updated_by' => auth()->id(),
+        ]);
+        
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'payment_account.deactivate',
+            'entity_type' => 'PlatformAccount',
+            'entity_id' => $account->id,
+            'meta' => ['account_type' => $account->account_type],
+            'ip_address' => $request->ip(),
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Account deactivated successfully',
         ]);
     }
 }

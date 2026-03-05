@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Foreman;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\InventoryCategory;
 use App\Models\InventoryEvidence;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
@@ -41,7 +42,9 @@ class InventoryController extends Controller
         $requests = collect();
         $movements = collect();
         $progressLogs = collect();
+        $recentItems = collect();
         $lowStockCount = 0;
+        $categoryCount = 0;
 
         if ($selectedSiteId && $foremanSiteIds->contains($selectedSiteId)) {
             $stocks = InventoryStock::with('item.category')
@@ -67,11 +70,42 @@ class InventoryController extends Controller
                 ->limit(10)
                 ->get();
 
+            $recentItems = InventoryItem::with('category')
+                ->where('site_id', $selectedSiteId)
+                ->where('is_active', true)
+                ->orderByDesc('created_at')
+                ->limit(10)
+                ->get();
+
             $lowStockCount = InventoryStock::where('site_id', $selectedSiteId)
                 ->whereColumn('quantity', '<=', 'low_stock_threshold')
                 ->where('low_stock_threshold', '>', 0)
                 ->count();
+
+            $categoryCount = InventoryCategory::where('site_id', $selectedSiteId)->count();
         }
+
+        $myRequests = ProcurementRequest::with('items.item')
+            ->whereIn('site_id', $foremanSiteIds)
+            ->where('requested_by', $user->id)
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        $myUsage = InventoryMovement::with(['item', 'evidences'])
+            ->whereIn('site_id', $foremanSiteIds)
+            ->where('performed_by', $user->id)
+            ->where('movement_type', 'usage_out')
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        $myProgressLogs = SiteProgressLog::with('site')
+            ->whereIn('site_id', $foremanSiteIds)
+            ->where('created_by', $user->id)
+            ->latest('log_date')
+            ->limit(5)
+            ->get();
 
         $items = InventoryItem::with('category')
                 ->where('site_id', $selectedSiteId)
@@ -88,7 +122,12 @@ class InventoryController extends Controller
             'movements',
             'progressLogs',
             'lowStockCount',
-            'items'
+            'categoryCount',
+            'recentItems',
+            'items',
+            'myRequests',
+            'myUsage',
+            'myProgressLogs'
         ));
     }
 
@@ -262,6 +301,14 @@ class InventoryController extends Controller
         if (!$this->foremanSiteIds($userId)->contains($siteId)) {
             abort(403, 'Unauthorized for this site.');
         }
+    }
+
+    public function showProgress(SiteProgressLog $progressLog): View
+    {
+        $this->assertForemanSite(auth()->id(), $progressLog->site_id);
+        $progressLog->load(['creator', 'site', 'evidences.uploader']);
+
+        return view('field.inventory.progress-detail', compact('progressLog'));
     }
 
     private function logAction(Request $request, string $action, string $entityType, int $entityId, array $meta = []): void

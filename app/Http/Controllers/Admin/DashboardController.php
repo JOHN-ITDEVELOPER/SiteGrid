@@ -129,7 +129,7 @@ class DashboardController extends Controller
             abort(403, 'Unauthorized');
         }
 
-        $site->load('owner', 'workers.user', 'payCycles', 'invoices');
+        $site->load('owner', 'workers.user', 'payCycles', 'invoices', 'policy');
 
         $metrics = [
             'active_workers' => $site->workers()->whereNull('ended_at')->count(),
@@ -284,6 +284,279 @@ class DashboardController extends Controller
         ]);
 
         return back()->with('success', 'User KYC rejected');
+    }
+
+    /**
+     * Show site creation form
+     */
+    public function createSite()
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $owners = User::where('role', 'site_owner')->orderBy('name')->get();
+        return view('admin.sites.create', compact('owners'));
+    }
+
+    /**
+     * Store a new site
+     */
+    public function storeSite(Request $request)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'owner_id' => 'required|exists:users,id',
+            'name' => 'required|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'payout_method' => 'required|in:platform_managed,owner_managed',
+            'owner_mpesa_account' => 'nullable|string|max:50|required_if:payout_method,owner_managed',
+            'payout_window_start' => 'required|string',
+            'payout_window_end' => 'required|string',
+            'invoice_due_days' => 'required|integer|min:1|max:365',
+        ]);
+
+        $settings = null;
+        
+        $site = Site::create([
+            'owner_id' => $validated['owner_id'],
+            'name' => $validated['name'],
+            'location' => $validated['location'] ?? null,
+            'payout_method' => $validated['payout_method'],
+            'owner_mpesa_account' => $validated['owner_mpesa_account'] ?? null,
+            'payout_window_start' => $validated['payout_window_start'],
+            'payout_window_end' => $validated['payout_window_end'],
+            'is_completed' => false,
+            'invoice_payment_method' => 'auto_wallet',
+            'invoice_due_days' => $validated['invoice_due_days'],
+        ]);
+
+        $this->logAction('admin.site.create', 'Site', $site->id, [
+            'name' => $site->name,
+            'owner_id' => $site->owner_id,
+            'location' => $site->location,
+            'payout_method' => $site->payout_method,
+        ]);
+
+        return redirect()->route('admin.sites.show', $site)->with('success', 'Site created successfully.');
+    }
+
+    /**
+     * Show site edit form
+     */
+    public function editSite(Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $owners = User::where('role', 'site_owner')->orderBy('name')->get();
+        return view('admin.sites.edit', compact('site', 'owners'));
+    }
+
+    /**
+     * Update site details
+     */
+    public function updateSite(Request $request, Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'owner_id' => 'required|exists:users,id',
+            'name' => 'required|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'payout_method' => 'required|in:platform_managed,owner_managed',
+            'owner_mpesa_account' => 'nullable|string|max:50|required_if:payout_method,owner_managed',
+            'payout_window_start' => 'required|string',
+            'payout_window_end' => 'required|string',
+            'invoice_due_days' => 'required|integer|min:1|max:365',
+            'is_completed' => 'boolean',
+        ]);
+
+        $oldValues = $site->only(['owner_id', 'name', 'location', 'payout_method', 'owner_mpesa_account', 'payout_window_start', 'payout_window_end', 'invoice_due_days', 'is_completed']);
+
+        $site->update($validated);
+
+        $changes = [];
+        foreach ($oldValues as $key => $oldValue) {
+            if ($oldValue != $validated[$key]) {
+                $changes[$key] = ['from' => $oldValue, 'to' => $validated[$key]];
+            }
+        }
+
+        if (!empty($changes)) {
+            $this->logAction('admin.site.update', 'Site', $site->id, $changes);
+        }
+
+        return back()->with('success', 'Site updated successfully.');
+    }
+
+    /**
+     * Delete a site
+     */
+    public function deleteSite(Request $request, Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        if ($site->workers()->whereNull('ended_at')->exists()) {
+            return back()->withErrors(['error' => 'Cannot delete site with active workers. Please deactivate all workers first.']);
+        }
+
+        if ($site->payCycles()->exists()) {
+            return back()->withErrors(['error' => 'Cannot delete site with pay cycles. Site has financial history.']);
+        }
+
+        $siteName = $site->name;
+        $siteId = $site->id;
+
+        $site->delete();
+
+        $this->logAction('admin.site.delete', 'Site', $siteId, [
+            'name' => $siteName,
+            'owner_id' => $site->owner_id,
+        ]);
+
+        return redirect()->route('admin.sites.index')->with('success', 'Site deleted successfully.');
+    }
+
+    public function editSitePolicy(Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $policy = $site->policy;
+        if (!$policy) {
+            $policy = $site->policy()->create([
+                'lock_payout_method' => true,
+                'lock_invoice_payment_method' => true,
+                'lock_compliance_settings' => true,
+            ]);
+        }
+
+        return view('admin.sites.policy', compact('site', 'policy'));
+    }
+
+    public function updateSitePolicy(Request $request, Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'lock_payout_method' => 'nullable|boolean',
+            'lock_payout_window' => 'nullable|boolean',
+            'lock_invoice_payment_method' => 'nullable|boolean',
+            'lock_compliance_settings' => 'nullable|boolean',
+            'lock_auto_payout' => 'nullable|boolean',
+            'lock_approval_workflow' => 'nullable|boolean',
+            'allowed_payout_methods' => 'nullable|array',
+            'allowed_payout_methods.*' => 'string|in:mpesa,bank_transfer,wallet',
+            'payout_window_constraints' => 'nullable|array',
+            'sms_provider_whitelist' => 'nullable|array',
+            'max_team_members' => 'nullable|integer|min:1|max:200',
+            'max_foremen' => 'nullable|integer|min:1|max:50',
+        ]);
+
+        // Convert missing checkboxes to false (unchecked)
+        $lockFields = ['lock_payout_method', 'lock_payout_window', 'lock_invoice_payment_method', 
+                       'lock_compliance_settings', 'lock_auto_payout', 'lock_approval_workflow'];
+        foreach ($lockFields as $field) {
+            $validated[$field] = $request->has($field) ? true : false;
+        }
+
+        $policy = $site->policy()->first();
+        if (!$policy) {
+            $policy = $site->policy()->create([
+                'lock_payout_method' => true,
+                'lock_invoice_payment_method' => true,
+                'lock_compliance_settings' => true,
+            ]);
+        }
+
+        $changes = [];
+        foreach ($validated as $key => $value) {
+            if (isset($policy->$key) && $policy->$key !== $value) {
+                $changes[$key] = [
+                    'from' => $policy->$key,
+                    'to' => $value,
+                ];
+            }
+        }
+
+        $policy->update(array_merge($validated, [
+            'last_policy_changed_at' => now(),
+            'last_policy_changed_by' => auth()->id(),
+        ]));
+
+        $this->logAction('admin.site_policy.update', 'SitePolicy', $policy->id, [
+            'site_id' => $site->id,
+            'site_name' => $site->name,
+            'changes' => $changes,
+        ]);
+
+        return redirect()->route('admin.sites.show', $site)->with('success', 'Site policy updated successfully.');
+    }
+
+    public function lockdownSite(Request $request, Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $validated = $request->validate([
+            'lockdown_reason' => 'required|string|max:500',
+            'lockdown_duration_hours' => 'required|integer|min:1|max:720', // max 30 days
+        ]);
+
+        $policy = $site->policy()->firstOrFail();
+        $lockdown_until = now()->addHours($validated['lockdown_duration_hours']);
+
+        $policy->update([
+            'is_locked_down' => true,
+            'lockdown_reason' => $validated['lockdown_reason'],
+            'lockdown_until' => $lockdown_until,
+            'last_policy_changed_at' => now(),
+            'last_policy_changed_by' => auth()->id(),
+        ]);
+
+        $this->logAction('admin.site.lockdown', 'Site', $site->id, [
+            'name' => $site->name,
+            'reason' => $validated['lockdown_reason'],
+            'until' => $lockdown_until,
+        ]);
+
+        return redirect()->route('admin.sites.show', $site)->with('success', "Site locked down until {$lockdown_until->format('M d, Y H:i')}.");
+    }
+
+    public function unlockdownSite(Site $site)
+    {
+        if (auth()->user()->role !== 'platform_admin') {
+            abort(403, 'Unauthorized');
+        }
+
+        $policy = $site->policy()->firstOrFail();
+
+        $policy->update([
+            'is_locked_down' => false,
+            'lockdown_reason' => null,
+            'lockdown_until' => null,
+            'last_policy_changed_at' => now(),
+            'last_policy_changed_by' => auth()->id(),
+        ]);
+
+        $this->logAction('admin.site.unlockdown', 'Site', $site->id, [
+            'name' => $site->name,
+        ]);
+
+        return redirect()->route('admin.sites.show', $site)->with('success', 'Site lockdown removed.');
     }
 
     private function logAction(string $action, ?string $entityType = null, ?int $entityId = null, array $meta = []): void

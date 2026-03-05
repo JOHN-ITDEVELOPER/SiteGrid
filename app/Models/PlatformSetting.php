@@ -31,6 +31,11 @@ class PlatformSetting extends Model
         'ussd_config',
         'sms_config',
         
+        // Payment Account Routing (references to PlatformAccount IDs)
+        'platform_deposit_account_id',
+        'platform_invoice_account_id',
+        'platform_payout_account_id',
+        
         // Billing & Pricing
         'platform_fee_per_worker',
         'default_currency',
@@ -41,6 +46,7 @@ class PlatformSetting extends Model
         'fee_percentage',
         'late_fee_amount',
         'invoice_reminder_days',
+        'default_invoice_due_days',
         
         // Payroll & Payout
         'payout_window_start_day',

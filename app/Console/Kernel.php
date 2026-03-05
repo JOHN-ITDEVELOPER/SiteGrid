@@ -25,6 +25,17 @@ class Kernel extends ConsoleKernel
             ->onSuccess(function () {
                 \Log::info('PayCycle auto-creation command completed successfully');
             });
+
+        // Generate weekly invoices for the last completed week every Monday
+        $schedule->command('invoices:generate-weekly --period=last')
+            ->weeklyOn(1, '02:15')
+            ->name('generate-weekly-invoices')
+            ->onFailure(function () {
+                \Log::warning('Weekly invoice generation command failed');
+            })
+            ->onSuccess(function () {
+                \Log::info('Weekly invoice generation command completed successfully');
+            });
     }
 
     /**

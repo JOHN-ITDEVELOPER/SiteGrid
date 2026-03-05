@@ -9,7 +9,10 @@ use App\Models\InventoryStock;
 use App\Models\ProcurementRequest;
 use App\Models\SiteProgressLog;
 use App\Models\SiteWorker;
+use App\Models\User;
 use App\Models\WorkerClaim;
+use App\Services\MpesaFeeService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -273,6 +276,98 @@ class DashboardController extends Controller
         return back()->with('success', 'Attendance marked successfully and payroll updated automatically.');
     }
 
+    public function bulkMarkAttendance(Request $request): RedirectResponse
+    {
+        $input = $request->all();
+        
+        if (isset($input['attendance']) && is_array($input['attendance'])) {
+            foreach ($input['attendance'] as $key => $record) {
+                // Convert empty strings to null for time fields
+                if (isset($record['check_in']) && (trim($record['check_in']) === '' || $record['check_in'] === null)) {
+                    $input['attendance'][$key]['check_in'] = null;
+                } else if (isset($record['check_in']) && !empty($record['check_in'])) {
+                    // HTML5 time input sends H:i format, convert to H:i:s for validation
+                    if (strlen($record['check_in']) === 5) { // "HH:mm" is 5 chars
+                        $input['attendance'][$key]['check_in'] = $record['check_in'] . ':00';
+                    }
+                }
+                
+                if (isset($record['check_out']) && (trim($record['check_out']) === '' || $record['check_out'] === null)) {
+                    $input['attendance'][$key]['check_out'] = null;
+                } else if (isset($record['check_out']) && !empty($record['check_out'])) {
+                    // HTML5 time input sends H:i format, convert to H:i:s for validation
+                    if (strlen($record['check_out']) === 5) { // "HH:mm" is 5 chars
+                        $input['attendance'][$key]['check_out'] = $record['check_out'] . ':00';
+                    }
+                }
+            }
+        }
+
+        $validated = \Illuminate\Support\Facades\Validator::make($input, [
+            'site_id' => 'required|exists:sites,id',
+            'date' => 'required|date|before_or_equal:today',
+            'attendance' => 'required|array',
+            'attendance.*.worker_id' => 'required|exists:users,id',
+            'attendance.*.is_present' => 'required|boolean',
+            'attendance.*.hours' => 'nullable|numeric|min:0|max:24',
+            'attendance.*.check_in' => 'nullable|date_format:H:i:s',
+            'attendance.*.check_out' => 'nullable|date_format:H:i:s',
+            'attendance.*.reason' => 'nullable|string|max:500',
+        ])->validate();
+
+        $user = auth()->user();
+        $this->assertForemanSite($user->id, (int) $validated['site_id']);
+
+        // Foremen cannot mark attendance for past dates
+        if ($validated['date'] < now()->toDateString()) {
+            return back()->withErrors(['date' => 'Cannot mark attendance for past dates. Contact site owner if correction is needed.']);
+        }
+
+        $count = 0;
+        foreach ($validated['attendance'] as $record) {
+            Attendance::updateOrCreate(
+                [
+                    'site_id' => $validated['site_id'],
+                    'worker_id' => $record['worker_id'],
+                    'date' => $validated['date'],
+                ],
+                [
+                    'is_present' => (bool) $record['is_present'],
+                    'hours' => $record['hours'] ?? null,
+                    'check_in' => $record['check_in'] ?? null,
+                    'check_out' => $record['check_out'] ?? null,
+                    'source' => 'foreman_web',
+                ]
+            );
+
+            // Update payouts for this worker
+            $this->updatePayoutsForAttendance(
+                (int) $validated['site_id'],
+                (int) $record['worker_id'],
+                $validated['date'],
+                $record['hours'] ?? 0
+            );
+
+            $count++;
+        }
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'foreman.attendance.bulk-mark',
+            'entity_type' => 'Attendance',
+            'entity_id' => 0,
+            'meta' => [
+                'site_id' => $validated['site_id'],
+                'date' => $validated['date'],
+                'count' => $count,
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return back()->with('success', "Attendance marked for {$count} workers and payroll updated automatically.");
+    }
+
     /**
      * Update payouts in real-time when attendance is recorded (Option C workflow)
      */
@@ -318,13 +413,13 @@ class DashboardController extends Controller
 
             // Update payout amounts
             $grossAmount = $totalHours * $hourlyRate;
-            $platformFee = $grossAmount * 0.05;
-            $mpesaFee = 25;
+            $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($grossAmount);
+            $mpesaFee = $feeBreakdown['fee'];
             $netAmount = $grossAmount;
 
             $payout->update([
                 'gross_amount' => $grossAmount,
-                'platform_fee' => $platformFee,
+                'platform_fee' => 0,
                 'mpesa_fee' => $mpesaFee,
                 'net_amount' => $netAmount,
             ]);
@@ -378,30 +473,85 @@ class DashboardController extends Controller
     public function storeWorker(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'site_id' => ['required', 'exists:sites,id'],
-            'worker_id' => ['required', 'exists:users,id'],
+            'site_id' => 'required|exists:sites,id',
+            'name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
+            'email' => 'nullable|email|max:255',
+            'role' => 'nullable|string|max:100',
+            'is_foreman' => 'boolean',
+            'daily_rate' => 'required|numeric|min:0',
+            'weekly_rate' => 'required|numeric|min:0',
+            'started_at' => 'required|date',
         ]);
 
         $user = auth()->user();
         $this->assertForemanSite($user->id, (int) $validated['site_id']);
 
-        SiteWorker::updateOrCreate(
-            [
-                'site_id' => $validated['site_id'],
-                'user_id' => $validated['worker_id'],
-            ],
-            [
-                'ended_at' => null,
-            ]
-        );
+        $existingByEmail = null;
+        if (!empty($validated['email'])) {
+            $existingByEmail = User::where('email', $validated['email'])->first();
+        }
+
+        // Check if worker exists, otherwise create
+        $worker = User::where('phone', $validated['phone'])->first();
+
+        if ($existingByEmail && (!$worker || $existingByEmail->id !== $worker->id)) {
+            return back()->withErrors([
+                'email' => 'That email is already linked to another account. Please use a different email or leave it blank.',
+            ])->withInput();
+        }
+
+        if (!$worker) {
+            try {
+                $worker = User::create([
+                    'name' => $validated['name'],
+                    'phone' => $validated['phone'],
+                    'email' => $validated['email'],
+                    'password' => bcrypt('default123'),
+                    'role' => 'worker',
+                    'kyc_status' => 'pending',
+                ]);
+            } catch (QueryException $e) {
+                if ((int) $e->getCode() === 23000) {
+                    return back()->withErrors([
+                        'email' => 'That email is already linked to another account. Please use a different email or leave it blank.',
+                    ])->withInput();
+                }
+
+                throw $e;
+            }
+        }
+
+        // Check if already assigned to site
+        $existing = SiteWorker::where('site_id', $validated['site_id'])
+            ->where('user_id', $worker->id)
+            ->whereNull('ended_at')
+            ->first();
+
+        if ($existing) {
+            return back()->withErrors(['phone' => 'Worker already assigned to this site.'])->withInput();
+        }
+
+        SiteWorker::create([
+            'site_id' => $validated['site_id'],
+            'user_id' => $worker->id,
+            'role' => $validated['role'] ?? 'worker',
+            'is_foreman' => $validated['is_foreman'] ?? false,
+            'daily_rate' => $validated['daily_rate'],
+            'weekly_rate' => $validated['weekly_rate'],
+            'started_at' => $validated['started_at'],
+        ]);
 
         AuditLog::create([
             'user_id' => $user->id,
             'action' => 'foreman.worker.add',
             'entity_type' => 'SiteWorker',
-            'entity_id' => $validated['worker_id'],
+            'entity_id' => $worker->id,
             'meta' => [
                 'site_id' => $validated['site_id'],
+                'worker_name' => $validated['name'],
+                'phone' => $validated['phone'],
+                'daily_rate' => $validated['daily_rate'],
             ],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),

@@ -351,7 +351,7 @@
     <div class="d-flex">
         <!-- Sidebar -->
         <div class="sidebar col-md-3 col-lg-2" id="adminSidebar">
-            <div class="logo">SiteGrid</div>
+            <div class="logo">SiteGrid Admin</div>
             
             <div class="nav-section">
                 <div class="nav-section-title">Menu</div>
@@ -362,6 +362,10 @@
                 <a href="{{ route('admin.sites.index') }}" class="{{ request()->routeIs('admin.sites.*') ? 'active' : '' }}">
                     <i class="bi bi-building"></i>
                     Sites
+                </a>
+                <a href="{{ route('admin.workers.index') }}" class="{{ request()->routeIs('admin.workers.*') ? 'active' : '' }}">
+                    <i class="bi bi-person-badge"></i>
+                    Workers
                 </a>
                 <a href="{{ route('admin.users.index') }}" class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                     <i class="bi bi-people"></i>
@@ -382,6 +386,10 @@
                 <a href="{{ route('admin.escrow.index') }}" class="{{ request()->routeIs('admin.escrow.*') ? 'active' : '' }}">
                     <i class="bi bi-shield-lock"></i>
                     Escrow
+                </a>
+                <a href="{{ route('admin.financial.dashboard') }}" class="{{ request()->routeIs('admin.financial.*') ? 'active' : '' }}">
+                    <i class="bi bi-graph-up"></i>
+                    Financial Reports
                 </a>
                 <a href="{{ route('admin.inventory.index') }}" class="{{ request()->routeIs('admin.inventory.*') ? 'active' : '' }}">
                     <i class="bi bi-box-seam"></i>
@@ -460,9 +468,9 @@
                     <div class="user-avatar">
                         {{ substr(auth()->user()->name ?? 'U', 0, 1) }}
                     </div>
-                    <form method="POST" action="{{ route('logout') }}" style="display: inline;">
+                    <form method="POST" action="{{ route('logout') }}" class="mb-0" id="logoutForm">
                         @csrf
-                        <button type="submit" class="btn-logout">
+                        <button type="button" data-bs-toggle="modal" data-bs-target="#logoutModal" class="btn-logout">
                             <i class="bi bi-box-arrow-right"></i> Logout
                         </button>
                     </form>
@@ -490,6 +498,29 @@
                 @endif
 
                 @yield('content')
+            </div>
+        </div>
+    </div>
+
+    <!-- Logout Confirmation Modal -->
+    <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title" id="logoutModalLabel">
+                        <i class="bi bi-box-arrow-right text-warning"></i> Confirm Logout
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">Are you sure you want to logout from your account?</p>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="document.getElementById('logoutForm').submit()">
+                        <i class="bi bi-box-arrow-right"></i> Yes, Logout
+                    </button>
+                </div>
             </div>
         </div>
     </div>

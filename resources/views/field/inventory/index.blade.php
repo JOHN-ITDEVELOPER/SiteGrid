@@ -17,9 +17,10 @@
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-4"><div class="card kpi-card p-3"><div class="text-muted small">Low Stock Alerts</div><div class="h4 mb-0">{{ $lowStockCount }}</div></div></div>
-    <div class="col-md-4"><div class="card kpi-card p-3"><div class="text-muted small">Requests (Recent)</div><div class="h4 mb-0">{{ $requests->count() }}</div></div></div>
-    <div class="col-md-4"><div class="card kpi-card p-3"><div class="text-muted small">Movements (Recent)</div><div class="h4 mb-0">{{ $movements->count() }}</div></div></div>
+    <div class="col-md-3"><div class="card kpi-card p-3"><div class="text-muted small">Categories</div><div class="h4 mb-0">{{ $categoryCount }}</div></div></div>
+    <div class="col-md-3"><div class="card kpi-card p-3"><div class="text-muted small">Available Items</div><div class="h4 mb-0">{{ $items->count() }}</div></div></div>
+    <div class="col-md-3"><div class="card kpi-card p-3"><div class="text-muted small">Low Stock Alerts</div><div class="h4 mb-0">{{ $lowStockCount }}</div></div></div>
+    <div class="col-md-3"><div class="card kpi-card p-3"><div class="text-muted small">Requests (Recent)</div><div class="h4 mb-0">{{ $requests->count() }}</div></div></div>
 </div>
 
 <div class="row g-3">
@@ -121,6 +122,105 @@
 
     <div class="col-12">
         <div class="form-section">
+            <div class="form-section-title">My Recent Submissions</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Type</th><th>Details</th><th>Status</th><th>Date</th><th>Photos</th><th>Actions</th></tr></thead>
+                    <tbody>
+                    @forelse($myProgressLogs->concat($myRequests)->concat($myUsage)->sortByDesc('created_at') as $sub)
+                        <tr>
+                            @if($sub instanceof \App\Models\SiteProgressLog)
+                                <td><span class="badge text-bg-info">Progress</span></td>
+                                <td>{{ $sub->title }} · {{ $sub->site->name }}</td>
+                                <td><span class="badge text-bg-{{ $sub->status === 'submitted' ? 'warning' : 'success' }}">{{ strtoupper($sub->status) }}</span></td>
+                                <td>{{ $sub->log_date }}</td>
+                                <td><span class="text-muted small">—</span></td>
+                                <td>
+                                    <a href="{{ route('field.inventory.progress.show', $sub) }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                </td>
+                            @elseif($sub instanceof \App\Models\ProcurementRequest)
+                                <td><span class="badge text-bg-primary">Procurement</span></td>
+                                <td>{{ $sub->reference }} · {{ $sub->items->count() }} items</td>
+                                <td><span class="badge text-bg-light border">{{ strtoupper($sub->status) }}</span></td>
+                                <td>{{ $sub->created_at->format('M d, H:i') }}</td>
+                                <td><span class="text-muted small">—</span></td>
+                                <td><span class="text-muted small">—</span></td>
+                            @else
+                                <td><span class="badge text-bg-danger">Usage</span></td>
+                                <td>{{ $sub->item->name }} · {{ number_format($sub->quantity, 3) }} {{ $sub->item->unit }}</td>
+                                <td><span class="badge text-bg-success">Recorded</span></td>
+                                <td>{{ $sub->created_at->format('M d, H:i') }}</td>
+                                <td>
+                                    @if($sub->evidences->count() > 0)
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#usageEvidenceModal{{ $sub->id }}">
+                                            <i class="bi bi-images"></i> {{ $sub->evidences->count() }}
+                                        </button>
+                                    @else
+                                        <span class="text-muted small">—</span>
+                                    @endif
+                                </td>
+                                <td><span class="text-muted small">—</span></td>
+                            @endif
+                        </tr>
+
+                        <!-- Usage Evidence Modal -->
+                        @if(!($sub instanceof \App\Models\SiteProgressLog) && !($sub instanceof \App\Models\ProcurementRequest) && $sub->evidences->count() > 0)
+                            <div class="modal fade" id="usageEvidenceModal{{ $sub->id }}" tabindex="-1">
+                                <div class="modal-dialog modal-dialog-scrollable modal-lg">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">
+                                                Usage Evidence: {{ $sub->item->name }}
+                                                <span class="badge text-bg-danger">Usage Out</span>
+                                            </h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="mb-3">
+                                                <div class="small text-muted">
+                                                    <strong>Item:</strong> {{ $sub->item->name }} ({{ $sub->item->unit }})<br/>
+                                                    <strong>Quantity Used:</strong> {{ number_format($sub->quantity, 3) }}<br/>
+                                                    <strong>Date:</strong> {{ $sub->created_at->format('M d, Y H:i') }}<br/>
+                                                    @if($sub->notes)
+                                                        <strong>Notes:</strong> {{ $sub->notes }}<br/>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            <div class="row g-3">
+                                                @foreach($sub->evidences as $evidence)
+                                                    <div class="col-md-6">
+                                                        <div class="card h-100">
+                                                            <img src="{{ asset('storage/' . $evidence->file_path) }}" class="card-img-top" style="max-height: 250px; object-fit: cover;">
+                                                            <div class="card-body">
+                                                                @if($evidence->caption)
+                                                                    <p class="card-text small"><strong>{{ $evidence->caption }}</strong></p>
+                                                                @endif
+                                                                <a href="{{ asset('storage/' . $evidence->file_path) }}" download class="btn btn-sm btn-outline-secondary w-100">
+                                                                    <i class="bi bi-download"></i> Download
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                    @empty
+                        <tr><td colspan="6" class="text-muted text-center py-3">No submissions yet.</td></tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="form-section">
             <div class="form-section-title">Recent Procurement Requests</div>
             <div class="table-responsive">
                 <table class="table table-sm">
@@ -135,6 +235,30 @@
                         </tr>
                     @empty
                         <tr><td colspan="4" class="text-muted">No requests yet.</td></tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="form-section">
+            <div class="form-section-title">Recently Added Items</div>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th>Status</th><th>Added</th></tr></thead>
+                    <tbody>
+                    @forelse($recentItems as $item)
+                        <tr>
+                            <td><strong>{{ $item->name }}</strong></td>
+                            <td><span class="badge text-bg-light">{{ $item->category->name ?? '-' }}</span></td>
+                            <td>{{ $item->unit }}</td>
+                            <td><span class="badge {{ $item->is_active ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $item->is_active ? 'Active' : 'Inactive' }}</span></td>
+                            <td>{{ $item->created_at->format('M d, Y H:i') }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="5" class="text-muted">No items available. Ask owner to set up inventory categories first.</td></tr>
                     @endforelse
                     </tbody>
                 </table>

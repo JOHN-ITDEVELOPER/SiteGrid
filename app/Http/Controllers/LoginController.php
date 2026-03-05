@@ -54,6 +54,19 @@ class LoginController extends Controller
                 return back()->withErrors(['login' => 'Invalid phone/email or password']);
             }
 
+            // Check if account is suspended
+            if ($user->is_suspended) {
+                $errorMsg = 'Your account has been suspended. Reason: ' . $user->suspension_reason;
+                if ($isJsonRequest) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $errorMsg,
+                        'account_suspended' => true,
+                    ], 403);
+                }
+                return back()->withErrors(['login' => $errorMsg]);
+            }
+
             // Check if email is verified (if user has email)
             if ($user->email && !$user->hasVerifiedEmail()) {
                 $errorMsg = 'Please verify your email before logging in. Check your inbox for the verification link.';
@@ -70,6 +83,11 @@ class LoginController extends Controller
             // Login the user
             Auth::login($user, $request->boolean('remember'));
             $request->session()->regenerate();
+
+            // Check if password reset is required
+            if ($user->password_reset_required) {
+                return redirect()->route('password.reset')->with('warning', 'You are required to reset your password before continuing.');
+            }
 
             // Check if user needs to complete profile (name is required)
             if (is_null($user->name)) {

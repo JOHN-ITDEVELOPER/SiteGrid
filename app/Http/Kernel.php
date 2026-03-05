@@ -36,6 +36,7 @@ class Kernel extends HttpKernel
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\CheckAccountSuspension::class,
         ],
 
         'api' => [
@@ -68,5 +69,6 @@ class Kernel extends HttpKernel
         'owner' => \App\Http\Middleware\OwnerMiddleware::class,
         'worker' => \App\Http\Middleware\WorkerMiddleware::class,
         'foreman' => \App\Http\Middleware\ForemanMiddleware::class,
+        'check_suspension' => \App\Http\Middleware\CheckAccountSuspension::class,
     ];
 }

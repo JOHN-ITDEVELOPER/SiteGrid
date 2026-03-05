@@ -38,7 +38,12 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h6 class="mb-0">{{ $site->name }}</h6>
-                        <span class="badge {{ $site->is_completed ? 'text-bg-secondary' : 'text-bg-success' }}">{{ $site->is_completed ? 'Completed' : 'Active' }}</span>
+                        <div class="d-flex gap-2">
+                            <span class="badge {{ $site->is_completed ? 'text-bg-secondary' : 'text-bg-success' }}">{{ $site->is_completed ? 'Completed' : 'Active' }}</span>
+                            @if($site->policy && $site->policy->isCurrentlyLockedDown())
+                                <span class="badge text-bg-danger"><i class="bi bi-lock"></i> Locked</span>
+                            @endif
+                        </div>
                     </div>
                     <div class="text-muted small mb-2">{{ $site->location }}</div>
                     <div class="small mb-2">Active workers: <strong>{{ $site->workers_count }}</strong></div>

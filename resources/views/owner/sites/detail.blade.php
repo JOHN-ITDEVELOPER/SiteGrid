@@ -10,6 +10,17 @@
     </a>
 </div>
 
+@if($site->policy && $site->policy->isCurrentlyLockedDown())
+    <div class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+        <i class="bi bi-shield-exclamation fs-4"></i>
+        <div>
+            <strong>Site Locked by Admin</strong>
+            <p class="mb-0">{{ $site->policy->lockdown_reason }}</p>
+            <small>Locked until: <strong>{{ $site->policy->lockdown_until->format('M d, Y H:i') }}</strong></small>
+        </div>
+    </div>
+@endif
+
 <div class="row g-3 mb-4">
     <div class="col-md-8">
         <div class="card kpi-card h-100">

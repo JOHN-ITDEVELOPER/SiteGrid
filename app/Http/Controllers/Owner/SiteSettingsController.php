@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invitation;
+use App\Models\PlatformSetting;
 use App\Models\Site;
 use App\Models\SiteFeatureFlag;
 use App\Models\SiteMember;
@@ -12,6 +13,7 @@ use App\Models\SiteSetting;
 use App\Models\SiteSettingsAudit;
 use App\Models\SiteTemplate;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -108,6 +110,9 @@ class SiteSettingsController extends Controller
             ->limit(20)
             ->get();
 
+        $platformSettings = PlatformSetting::first();
+        $policy = $site->policy;
+
         return view('owner.sites.settings', compact(
             'site',
             'payoutSettings',
@@ -118,13 +123,30 @@ class SiteSettingsController extends Controller
             'templates',
             'invitations',
             'members',
-            'audits'
+            'audits',
+            'platformSettings',
+            'policy'
         ))->with('templateVariables', $this->templateVariables);
     }
 
     public function updatePayouts(Request $request, Site $site)
     {
         $this->assertOwnerHasSite($site->id);
+
+        // Check policy locks
+        $policy = $site->policy;
+        
+        if ($policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. No setting changes are allowed.']);
+        }
+
+        if ($policy->isPayoutMethodLocked()) {
+            return back()->withErrors(['error' => 'Payout Method setting is locked by admin and cannot be changed.']);
+        }
+
+        if ($policy->isPayoutWindowLocked()) {
+            return back()->withErrors(['error' => 'Payout Window setting is locked by admin and cannot be changed.']);
+        }
 
         $validated = $request->validate([
             'account_type' => 'required|in:platform,owner',
@@ -303,9 +325,70 @@ class SiteSettingsController extends Controller
             : 'Payout account test failed: ' . $validationMessage . ' Fallback to platform mode applied.');
     }
 
+    public function updateBilling(Request $request, Site $site)
+    {
+        $this->assertOwnerHasSite($site->id);
+
+        // Check if site is locked down
+        $policy = $site->policy;
+        if ($policy && $policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. No setting changes are allowed.']);
+        }
+
+        if ($policy && $policy->isInvoicePaymentMethodLocked()) {
+            return back()->withErrors(['error' => 'Invoice Payment Method is locked by admin and cannot be changed.']);
+        }
+
+        $validated = $request->validate([
+            'invoice_payment_method' => 'required|in:auto_wallet,manual_mpesa',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $oldValues = [
+            'invoice_payment_method' => $site->invoice_payment_method,
+        ];
+
+        $site->update([
+            'invoice_payment_method' => $validated['invoice_payment_method'],
+        ]);
+
+        $this->logSettingsAudit(
+            $site->id,
+            'settings.billing.updated',
+            [
+                'old' => $oldValues,
+                'new' => [
+                    'invoice_payment_method' => $validated['invoice_payment_method'],
+                ],
+            ],
+            $validated['reason'] ?? null
+        );
+
+        return back()->with('success', 'Billing settings updated successfully.');
+    }
+
     public function updateCommunications(Request $request, Site $site)
     {
         $this->assertOwnerHasSite($site->id);
+
+        // Check policy locks
+        $policy = $site->policy;
+        
+        if ($policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. No setting changes are allowed.']);
+        }
+
+        if ($policy->isComplianceSettingsLocked()) {
+            return back()->withErrors(['error' => 'Compliance Settings are locked by admin and cannot be changed.']);
+        }
+
+        // Check SMS provider whitelist if set
+        if ($policy->sms_provider_whitelist && !empty($policy->sms_provider_whitelist)) {
+            $provider = $request->input('sms_provider_override');
+            if ($provider && !in_array($provider, $policy->sms_provider_whitelist)) {
+                return back()->withErrors(['error' => "SMS provider '$provider' is not allowed. Whitelisted providers: " . implode(', ', $policy->sms_provider_whitelist)]);
+            }
+        }
 
         $validated = $request->validate([
             'sms_sender' => 'required|string|max:20',
@@ -420,6 +503,12 @@ class SiteSettingsController extends Controller
     {
         $this->assertOwnerHasSite($site->id);
 
+        // Check if site is locked down
+        $policy = $site->policy;
+        if ($policy && $policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. No setting changes are allowed.']);
+        }
+
         $validated = $request->validate([
             'features' => 'required|array',
             'features.*.value' => 'required|boolean',
@@ -453,6 +542,12 @@ class SiteSettingsController extends Controller
     {
         $this->assertOwnerHasSite($site->id);
 
+        // Check if site is locked down
+        $policy = $site->policy;
+        if ($policy && $policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. No setting changes are allowed.']);
+        }
+
         $validated = $request->validate([
             'claim_created' => 'nullable|boolean',
             'payout_failed' => 'nullable|boolean',
@@ -483,6 +578,12 @@ class SiteSettingsController extends Controller
     public function storeInvitation(Request $request, Site $site)
     {
         $this->assertOwnerHasSite($site->id);
+
+        // Check if site is locked down
+        $policy = $site->policy;
+        if ($policy && $policy->isCurrentlyLockedDown()) {
+            return back()->withErrors(['error' => 'Site is currently locked by admin. Cannot manage invitations at this time.']);
+        }
 
         $validated = $request->validate([
             'phone' => 'required|string|max:20',

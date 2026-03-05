@@ -3,22 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Manage onsite teams across construction, farming, events and more — attendance, resource tracking, and secure mobile payouts (USSD & M-Pesa).">
+    <meta name="description" content="Payroll, attendance & site operations for construction, farms & events – with USSD & M-Pesa payouts.">
     <meta name="theme-color" content="#1e1b4b">
     
     <!-- Open Graph / SEO -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="{{ url('/') }}">
     <meta property="og:title" content="SiteGrid - Workforce, payroll & site operations">
-    <meta property="og:description" content="Manage onsite teams across construction, farming, events and more — attendance, resource tracking, and secure mobile payouts (USSD & M-Pesa).">
+    <meta property="og:description" content="Manage onsite teams – attendance, resource tracking, and secure mobile payouts via USSD & M-Pesa.">
     <meta property="og:image" content="{{ asset('images/og-hero.png') }}">
     
     <!-- Twitter Card -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="{{ url('/') }}">
     <meta property="twitter:title" content="SiteGrid - Payroll & Attendance for Construction Sites">
-    <meta property="twitter:description" content="Capture attendance, compute weekly pay, and pay workers using M-Pesa — with USSD for feature phones.">
+    <meta property="twitter:description" content="Capture attendance, compute weekly pay, and pay workers using M-Pesa – with USSD for feature phones.">
     <meta property="twitter:image" content="{{ asset('images/og-hero.png') }}">
+    
+    <!-- Preload hero image -->
+    <link rel="preload" as="image" href="{{ asset('images/hero-illustration.jpg') }}">
+    
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.ico') }}">
     <title>SiteGrid - Workforce, payroll & site operations for construction, farms & events</title>
     
@@ -33,9 +37,21 @@
             --accent-orange-dark: #ea580c;
         }
         
-        /* Smooth scroll behavior */
+        /* Utility classes */
+        .bg-accent {
+            background-color: var(--accent-orange) !important;
+        }
+        .border-accent {
+            border-color: var(--accent-orange) !important;
+        }
+        .text-accent {
+            color: var(--accent-orange) !important;
+        }
+        
+        /* Smooth scroll with header offset */
         html {
             scroll-behavior: smooth;
+            scroll-padding-top: 80px; /* matches sticky header height */
         }
 
         body {
@@ -60,12 +76,15 @@
             transition: all 0.2s ease-out;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover,
+        .btn-primary:focus-visible {
             background-color: var(--accent-orange-dark);
             border-color: var(--accent-orange-dark);
             color: white;
             transform: scale(1.05);
             box-shadow: 0 10px 25px rgba(249, 115, 22, 0.2);
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 2px;
         }
 
         .btn-secondary {
@@ -81,10 +100,13 @@
             text-decoration: none;
         }
 
-        .btn-secondary:hover {
+        .btn-secondary:hover,
+        .btn-secondary:focus-visible {
             background-color: #f5f3ff;
             text-decoration: none;
             color: var(--primary-indigo);
+            outline: 2px solid var(--primary-indigo);
+            outline-offset: 2px;
         }
 
         /* Header */
@@ -103,8 +125,15 @@
         }
 
         .navbar-brand img {
-            height: 5.5rem;
+            height: 3rem; /* reduced from 5.5rem */
             width: auto;
+            transition: height 0.2s;
+        }
+
+        @media (max-width: 768px) {
+            .navbar-brand img {
+                height: 2.5rem; /* reduced from 3.75rem */
+            }
         }
 
         .logo-icon {
@@ -182,6 +211,7 @@
             box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
             object-fit: cover;
             width: 100%;
+            height: auto;
         }
 
         /* Feature Cards */
@@ -319,6 +349,12 @@
             height: 2.5rem;
             border-radius: 50%;
             background-color: #dbeafe;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--primary-indigo);
+            text-transform: uppercase;
         }
 
         .author-info h5 {
@@ -407,8 +443,8 @@
             margin-bottom: 1.5rem;
         }
 
-        .contact-box input,
-        .contact-box textarea {
+        /* Dark form inputs */
+        .form-control-dark {
             background-color: #4c1d95;
             border: 1px solid #6366f1;
             color: white;
@@ -416,20 +452,18 @@
             padding: 0.5rem;
         }
 
-        .contact-box input::placeholder,
-        .contact-box textarea::placeholder {
+        .form-control-dark::placeholder {
             color: #a5b4fc;
         }
 
-        .contact-box input:focus,
-        .contact-box textarea:focus {
+        .form-control-dark:focus {
             outline: none;
             border-color: var(--accent-orange);
             box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
             background-color: #4c1d95;
         }
 
-        .contact-box label {
+        .form-label {
             color: #e0e7ff;
             font-size: 0.875rem;
             font-weight: 500;
@@ -481,98 +515,6 @@
             color: #9ca3af;
         }
 
-        /* Modal Styling */
-        .modal-backdrop {
-            position: fixed;
-            inset: 0;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1050;
-        }
-
-        .modal-backdrop.modal-hidden {
-            display: none;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 0.5rem;
-            box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
-            max-width: 28rem;
-            width: 100%;
-            margin: 1rem;
-            padding: 2rem;
-            position: relative;
-        }
-
-        .modal-close {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: #6b7280;
-            transition: color 0.2s;
-        }
-
-        .modal-close:hover {
-            color: #111827;
-        }
-
-        .modal-close svg {
-            width: 1.5rem;
-            height: 1.5rem;
-        }
-
-        .modal-content h2 {
-            font-size: 1.875rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .modal-content > p:nth-of-type(1) {
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group {
-            margin-bottom: 1rem;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #374151;
-            margin-bottom: 0.5rem;
-        }
-
-        .form-group input,
-        .form-group textarea {
-            width: 100%;
-            padding: 0.5rem;
-            border: 2px solid #d1d5db;
-            border-radius: 0.375rem;
-            font-size: 1rem;
-            transition: all 0.2s;
-            font-family: inherit;
-        }
-
-        .form-group input:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: var(--accent-orange);
-            box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
-        }
-
-        .form-help {
-            font-size: 0.75rem;
-            color: #6b7280;
-            margin-top: 0.25rem;
-        }
-
         /* Toast Notifications */
         #successToast {
             position: fixed;
@@ -590,7 +532,7 @@
         }
 
         #successToast.hidden {
-            display: none;
+            display: none !important;
         }
 
         /* Animations */
@@ -611,10 +553,6 @@
 
         /* Responsive */
         @media (max-width: 768px) {
-            .navbar-brand img {
-                height: 3.75rem;
-            }
-
             .navbar-collapse {
                 margin-top: 0.75rem;
                 padding-top: 0.75rem;
@@ -640,6 +578,12 @@
             .contact-box {
                 margin-bottom: 1.5rem;
             }
+        }
+
+        /* Focus outline for accessibility */
+        :focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 2px;
         }
     </style>
 </head>
@@ -709,16 +653,16 @@
                         
                         <!-- Micro-trust line -->
                         <div class="trust-line">
-                            <svg class="trust-icon" fill="currentColor" viewBox="0 0 20 20">
+                            <svg class="trust-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                             </svg>
                             Trusted by small contractors - pilot-ready. No bank account required.
                         </div>
                     </div>
                     
-                    <!-- Hero Image / Illustration Placeholder -->
+                    <!-- Hero Image (static, no rotation) -->
                     <div class="col-12 col-lg-6 d-none d-lg-block">
-                        <img id="heroImage" src="{{ asset('images/hero-illustration.jpg') }}" alt="Team managing workers, materials and payouts across multiple site types" class="hero-image">
+                        <img id="heroImage" src="{{ asset('images/hero-illustration.jpg') }}" alt="Team managing workers, materials and payouts across multiple site types" class="hero-image" width="600" height="400" loading="eager">
                     </div>
                 </div>
             </div>
@@ -732,39 +676,39 @@
                     <div class="col text-center">
                         <div class="mb-3">
                             <div class="d-inline-flex align-items-center justify-content-center p-2 bg-light rounded">
-                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                             </div>
                         </div>
                         <h3 class="h5 text-dark mb-2">Attendance & time capture</h3>
-                        <p class="text-muted">Foreman web, PWA & USSD check-in</p>
+                        <p class="text-muted">Foreman logs in via web, workers check in with USSD – no smartphone needed.</p>
                     </div>
                     
                     <!-- Feature 2: Flexible Pay Cycles -->
                     <div class="col text-center">
                         <div class="mb-3">
                             <div class="d-inline-flex align-items-center justify-content-center p-2 bg-light rounded">
-                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                             </div>
                         </div>
                         <h3 class="h5 text-dark mb-2">Flexible pay cycles & payouts</h3>
-                        <p class="text-muted">Daily, weekly or monthly with M-Pesa</p>
+                        <p class="text-muted">Daily, weekly or monthly with M-Pesa – reduce payroll disputes.</p>
                     </div>
                     
                     <!-- Feature 3: Works Everywhere -->
                     <div class="col text-center">
                         <div class="mb-3">
                             <div class="d-inline-flex align-items-center justify-content-center p-2 bg-light rounded">
-                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="feature-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 14h8m-8-4h8m-8-4h8M5 20h14a2 2 0 002-2V4a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
                             </div>
                         </div>
                         <h3 class="h5 text-dark mb-2">Works on smartphones & feature phones</h3>
-                        <p class="text-muted">USSD support for non-smartphone workers</p>
+                        <p class="text-muted">USSD support for workers without smartphones – inclusive by design.</p>
                     </div>
                 </div>
             </div>
@@ -782,7 +726,7 @@
                     <div class="col">
                         <div class="text-center p-3">
                             <h4 class="h6 text-dark mb-2">Construction Sites</h4>
-                            <p class="small text-muted">Manage daily labor, equipment, and material costs</p>
+                            <p class="small text-muted">Manage daily labor, equipment, and material costs – reduce payroll errors.</p>
                         </div>
                     </div>
                     
@@ -790,7 +734,7 @@
                     <div class="col">
                         <div class="text-center p-3">
                             <h4 class="h6 text-dark mb-2">Farms & Plantations</h4>
-                            <p class="small text-muted">Track seasonal workers and harvest payouts</p>
+                            <p class="small text-muted">Track seasonal workers and harvest payouts – no more lost timesheets.</p>
                         </div>
                     </div>
                     
@@ -798,7 +742,7 @@
                     <div class="col">
                         <div class="text-center p-3">
                             <h4 class="h6 text-dark mb-2">Event Staffing</h4>
-                            <p class="small text-muted">Quick onboarding for crew, fast end-of-event payroll</p>
+                            <p class="small text-muted">Quick onboarding for crew, fast end-of-event payroll – even for one‑day hires.</p>
                         </div>
                     </div>
                     
@@ -806,7 +750,7 @@
                     <div class="col">
                         <div class="text-center p-3">
                             <h4 class="h6 text-dark mb-2">Small Manufacturing</h4>
-                            <p class="small text-muted">Daily or shift-based payroll and resource tracking</p>
+                            <p class="small text-muted">Daily or shift-based payroll and resource tracking – keep production moving.</p>
                         </div>
                     </div>
                 </div>
@@ -906,9 +850,7 @@
                         
                         <a href="{{ route('register') }}" class="btn btn-primary w-100 d-block">Start free trial</a>
                         
-                        <p class="text-center small text-muted mt-3 mb-0">
-                            <a href="#" class="text-accent text-decoration-none fw-semibold">View detailed pricing →</a>
-                        </p>
+                        <!-- Removed dead link -->
                     </div>
                 </div>
             </div>
@@ -934,9 +876,9 @@
                                 "SiteGrid cut our payroll time from 3 hours to 30 minutes. Works across our sites - from farms to events."
                             </p>
                             <div class="d-flex gap-2">
-                                <div class="testimonial-avatar bg-light rounded-circle flex-shrink-0"></div>
-                                <div>
-                                    <p class="fw-semibold text-dark mb-0">David Kipchoge</p>
+                                <div class="author-avatar">DK</div>
+                                <div class="author-info">
+                                    <h5 class="fw-semibold text-dark mb-0">David Kipchoge</h5>
                                     <p class="small text-muted mb-0">Operations Lead</p>
                                 </div>
                             </div>
@@ -953,9 +895,9 @@
                                 "We run five sites and SiteGrid syncs everything. Especially love USSD - workers without smartphones can check in."
                             </p>
                             <div class="d-flex gap-2">
-                                <div class="testimonial-avatar bg-light rounded-circle flex-shrink-0"></div>
-                                <div>
-                                    <p class="fw-semibold text-dark mb-0">Sarah Muthoni</p>
+                                <div class="author-avatar">SM</div>
+                                <div class="author-info">
+                                    <h5 class="fw-semibold text-dark mb-0">Sarah Muthoni</h5>
                                     <p class="small text-muted mb-0">Site Manager</p>
                                 </div>
                             </div>
@@ -972,9 +914,9 @@
                                 "No upfront fees, no minimum. Perfect for our pilot. We're scaling up to 40 workers next month."
                             </p>
                             <div class="d-flex gap-2">
-                                <div class="testimonial-avatar bg-light rounded-circle flex-shrink-0"></div>
-                                <div>
-                                    <p class="fw-semibold text-dark mb-0">James Kariuki</p>
+                                <div class="author-avatar">JK</div>
+                                <div class="author-info">
+                                    <h5 class="fw-semibold text-dark mb-0">James Kariuki</h5>
                                     <p class="small text-muted mb-0">Project Owner</p>
                                 </div>
                             </div>
@@ -992,7 +934,7 @@
             </div>
         </section>
         
-        <!-- FAQ Section -->
+        <!-- FAQ Section (Bootstrap Accordion) -->
         <section id="faq" class="py-5 py-lg-6 bg-white">
             <div class="container" style="max-width: 56rem;">
                 <div class="text-center mb-5">
@@ -1000,15 +942,15 @@
                     <p class="fs-6 text-muted">Everything you need to know</p>
                 </div>
                 
-                <div>
+                <div class="accordion" id="faqAccordion">
                     <!-- FAQ Item 1 -->
-                    <div class="accordion-item border rounded-top mb-2">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading1">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" aria-expanded="false" aria-controls="faq1">
                                 How does USSD work?
                             </button>
                         </h3>
-                        <div id="faq1" class="accordion-collapse collapse">
+                        <div id="faq1" class="accordion-collapse collapse" aria-labelledby="heading1" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Workers dial a code (e.g., <code>*123*456#</code>) to check in. Works for farms, construction sites, events, and more. They confirm attendance, and we record it instantly. No data, no app, no smartphone required.
                             </div>
@@ -1016,13 +958,13 @@
                     </div>
                     
                     <!-- FAQ Item 2 -->
-                    <div class="accordion-item border rounded-0 mb-2">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading2">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">
                                 How are payouts protected?
                             </button>
                         </h3>
-                        <div id="faq2" class="accordion-collapse collapse">
+                        <div id="faq2" class="accordion-collapse collapse" aria-labelledby="heading2" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Site owners approve payroll before we send funds. Funds are held in an escrow until the owner releases them. All transactions are logged for audit and dispute resolution.
                             </div>
@@ -1030,13 +972,13 @@
                     </div>
                     
                     <!-- FAQ Item 3 -->
-                    <div class="accordion-item border rounded-0 mb-2">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading3">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3">
                                 What are payment fees?
                             </button>
                         </h3>
-                        <div id="faq3" class="accordion-collapse collapse">
+                        <div id="faq3" class="accordion-collapse collapse" aria-labelledby="heading3" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Our platform charge is KES 50 per worker per week. M-Pesa transfer fees are paid by the site owner (standard Safaricom rates, ~KES 21–33 per transaction). USSD dialing is free on most networks.
                             </div>
@@ -1044,13 +986,13 @@
                     </div>
                     
                     <!-- FAQ Item 4 -->
-                    <div class="accordion-item border rounded-0 mb-2">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading4">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">
                                 What if my workers don't have M-Pesa?
                             </button>
                         </h3>
-                        <div id="faq4" class="accordion-collapse collapse">
+                        <div id="faq4" class="accordion-collapse collapse" aria-labelledby="heading4" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Most workers in Kenya have M-Pesa. If they don't, the site owner can payout manually, or we can help you set up a group account. Chat with sales for custom integrations.
                             </div>
@@ -1058,13 +1000,13 @@
                     </div>
                     
                     <!-- FAQ Item 5 -->
-                    <div class="accordion-item border rounded-0 mb-2">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading5">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5">
                                 Can I trial SiteGrid for free?
                             </button>
                         </h3>
-                        <div id="faq5" class="accordion-collapse collapse">
+                        <div id="faq5" class="accordion-collapse collapse" aria-labelledby="heading5" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Yes! Your first 10 workers are free for 4 weeks. No payment method needed to start. After that, it's KES 50 per worker per week.
                             </div>
@@ -1072,13 +1014,13 @@
                     </div>
                     
                     <!-- FAQ Item 6: Materials & Tools -->
-                    <div class="accordion-item border rounded-bottom">
-                        <h3 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6" aria-expanded="false">
+                    <div class="accordion-item">
+                        <h3 class="accordion-header" id="heading6">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6" aria-expanded="false" aria-controls="faq6">
                                 Can I track materials and tools?
                             </button>
                         </h3>
-                        <div id="faq6" class="accordion-collapse collapse">
+                        <div id="faq6" class="accordion-collapse collapse" aria-labelledby="heading6" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
                                 Yes — SiteGrid supports onsite inventory: receive deliveries, issue materials to tasks, and log tool checkouts so you can reconcile costs by pay cycle.
                             </div>
@@ -1099,39 +1041,39 @@
                 <div class="row g-4">
                     <!-- Quick Signup -->
                     <div class="col-12 col-md-6">
-                        <div class="bg-body-tertiary p-4 rounded">
+                        <div class="bg-dark p-4 rounded border border-secondary">
                             <h3 class="h5 text-white mb-4">Quick Start (2 min)</h3>
+                            <p class="text-white-50 small mb-3">Start your free trial now – no credit card required.</p>
                             <a href="{{ route('register') }}" class="btn btn-primary w-100">
                                 Create a site
                             </a>
-                            <p class="text-gray-300 small mt-2 mb-0">Free trial, no credit card.</p>
                         </div>
                     </div>
                     
                     <!-- Demo Form -->
                     <div class="col-12 col-md-6">
-                        <div class="bg-body-tertiary p-4 rounded">
+                        <div class="bg-dark p-4 rounded border border-secondary">
                             <h3 class="h5 text-white mb-4">Request a Demo</h3>
                             <form id="demoForm" action="{{ route('demo.submit') }}" method="POST">
                                 @csrf
                                 
                                 <div class="mb-3">
-                                    <label for="demo_name" class="form-label text-white small">Full Name</label>
-                                    <input type="text" id="demo_name" name="name" required class="form-control form-control-dark" placeholder="full name">
+                                    <label for="demo_name" class="form-label">Full Name</label>
+                                    <input type="text" id="demo_name" name="name" required class="form-control form-control-dark" placeholder="Full name">
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="demo_company" class="form-label text-white small">Company</label>
+                                    <label for="demo_company" class="form-label">Company</label>
                                     <input type="text" id="demo_company" name="company" class="form-control form-control-dark" placeholder="Your Company (e.g., Farm, Event Co, Contractor)">
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="demo_email" class="form-label text-white small">Email</label>
+                                    <label for="demo_email" class="form-label">Email</label>
                                     <input type="email" id="demo_email" name="email" required class="form-control form-control-dark" placeholder="you@example.com">
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="demo_phone" class="form-label text-white small">Phone (optional)</label>
+                                    <label for="demo_phone" class="form-label">Phone (optional)</label>
                                     <input type="tel" id="demo_phone" name="phone" class="form-control form-control-dark" placeholder="+254 7XXXXXXXX">
                                 </div>
                                 
@@ -1153,7 +1095,7 @@
                 <!-- Brand -->
                 <div class="col-12 col-sm-6 col-lg-auto">
                     <div class="d-flex gap-2 align-items-center mb-3">
-                        <img src="{{ asset('images/logo.png') }}" alt="SiteGrid Logo" style="height: 5rem; width: auto;">
+                        <img src="{{ asset('images/logo.png') }}" alt="SiteGrid Logo" style="height: 3rem; width: auto;">
                     </div>
                     <p class="small">Workforce, payroll & site operations for construction, agriculture, events and more.</p>
                 </div>
@@ -1206,138 +1148,104 @@
                     © 2026 SiteGrid. All rights reserved.
                 </p>
                 <p class="text-center text-xs text-gray-500 mb-0">
-                 
                     <a href="#" class="text-gray-400 text-decoration-none">Read our Privacy Policy</a>.
                 </p>
             </div>
         </div>
     </footer>
     
-    <!-- Signup Modal (Phone OTP) -->
-    <div id="signupModal" class="modal-backdrop modal-hidden" onclick="closeSignupModal()">
-        <div class="bg-white rounded-lg shadow-2xl modal-content" style="max-width: 28rem; width: 90%;" onclick="event.stopPropagation()">
-            <!-- Close Button -->
-            <button onclick="closeSignupModal()" type="button" class="btn-close position-absolute top-2 end-2"></button>
-            
-            <div class="p-4">
-                <h2 class="h4 text-dark fw-bold mb-2">📋 Create Your Site Account</h2>
-                <p class="text-muted mb-4">Manage your site and track worker payments. Get started in 2 minutes.</p>
-                
-                <form id="signupFormPhone" action="{{ route('signup.phone') }}" method="POST">
-                    @csrf
+    <!-- Signup Modal (Bootstrap) -->
+    <div class="modal fade" id="signupModal" tabindex="-1" aria-labelledby="signupModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title h4" id="signupModalLabel">📋 Create Your Site Account</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-2">
+                    <p class="text-muted mb-4">Manage your site and track worker payments. Get started in 2 minutes.</p>
                     
-                    <div class="mb-3">
-                        <label for="phone" class="form-label small">Phone number</label>
-                        <input 
-                            type="tel" 
-                            id="phone" 
-                            name="phone" 
-                            required 
-                            class="form-control"
-                            placeholder="+254 7XXXXXXXX"
-                            aria-describedby="phone-help"
-                        >
-                        <small id="phone-help" class="d-block text-muted mt-1">International format (e.g., +254 for Kenya)</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="name_signup" class="form-label small">Your name</label>
-                        <input 
-                            type="text" 
-                            id="name_signup" 
-                            name="name" 
-                            class="form-control"
-                            placeholder="Your full name"
-                        >
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary w-100">
-                        Send verification code
-                    </button>
-                    
-                    <p class="text-center text-xs text-muted mt-3 mb-0">
-                        We'll verify your phone number with a one-time code.
-                        <a href="#" class="text-accent text-decoration-none">Read our Privacy Policy</a>.
-                    </p>
-                </form>
+                    <form id="signupFormPhone" action="{{ route('signup.phone') }}" method="POST">
+                        @csrf
+                        
+                        <div class="mb-3">
+                            <label for="phone" class="form-label small">Phone number</label>
+                            <input type="tel" id="phone" name="phone" required class="form-control" placeholder="+254 7XXXXXXXX" aria-describedby="phone-help">
+                            <small id="phone-help" class="d-block text-muted mt-1">International format (e.g., +254 for Kenya)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="name_signup" class="form-label small">Your name</label>
+                            <input type="text" id="name_signup" name="name" class="form-control" placeholder="Your full name">
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            Send verification code
+                        </button>
+                        
+                        <p class="text-center text-xs text-muted mt-3 mb-0">
+                            We'll verify your phone number with a one-time code.
+                            <a href="#" class="text-accent text-decoration-none">Read our Privacy Policy</a>.
+                        </p>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
     
-    <!-- OTP Verification Modal (shown after phone submission) -->
-    <div id="otpModal" class="modal-backdrop modal-hidden" onclick="event.target === event.currentTarget && closeOtpModal()">
-        <div class="bg-white rounded-lg shadow-2xl modal-content" style="max-width: 28rem; width: 90%;" onclick="event.stopPropagation()">
-            <button onclick="closeOtpModal()" type="button" class="btn-close position-absolute top-2 end-2"></button>
-            
-            <div class="p-4">
-                <h2 class="h4 text-dark fw-bold mb-2">✅ Verify your phone</h2>
-                <p id="otpPhone" class="text-muted mb-4">Enter the code sent to <strong>+254 ••••••••</strong></p>
-                
-                <form id="otpForm" action="{{ route('signup.verify-otp') }}" method="POST">
-                    @csrf
-                    <input type="hidden" id="otpPhoneInput" name="phone">
+    <!-- OTP Verification Modal (Bootstrap) -->
+    <div class="modal fade" id="otpModal" tabindex="-1" aria-labelledby="otpModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title h4" id="otpModalLabel">✅ Verify your phone</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-2">
+                    <p id="otpPhone" class="text-muted mb-4">Enter the code sent to <strong>+254 ••••••••</strong></p>
                     
-                    <div class="mb-3">
-                        <label for="otp_code" class="form-label small">Verification code</label>
-                        <input 
-                            type="text" 
-                            id="otp_code" 
-                            name="otp_code" 
-                            required 
-                            maxlength="6"
-                            class="form-control text-center fs-4 tracking-widest font-monospace"
-                            placeholder="000000"
-                            aria-describedby="otp-help"
-                        >
-                        <small id="otp-help" class="d-block text-muted mt-2">
-                            Didn't get it? <button type="button" id="resendBtn" class="btn btn-link btn-sm p-0">Resend in 30s</button>
-                        </small>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary w-100">
-                        Verify & Complete Setup
-                    </button>
-                </form>
+                    <form id="otpForm" action="{{ route('signup.verify-otp') }}" method="POST">
+                        @csrf
+                        <input type="hidden" id="otpPhoneInput" name="phone">
+                        
+                        <div class="mb-3">
+                            <label for="otp_code" class="form-label small">Verification code</label>
+                            <input type="text" id="otp_code" name="otp_code" required maxlength="6" class="form-control text-center fs-4 tracking-widest font-monospace" placeholder="000000" aria-describedby="otp-help">
+                            <small id="otp-help" class="d-block text-muted mt-2">
+                                Didn't get it? <button type="button" id="resendBtn" class="btn btn-link btn-sm p-0">Resend in 30s</button>
+                            </small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            Verify & Complete Setup
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
     
     <!-- Success Toast Notification -->
-    <div id="successToast" class="position-fixed bottom-0 end-0 m-3 bg-success text-white px-3 py-2 rounded-lg shadow-lg d-none z-50 d-flex gap-2 align-items-center" style="max-width: 24rem; display: none !important;">
-        <svg class="w-5 h-5 flex-shrink-0" width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-        </svg>
-        <span id="toastMessage">Success!</span>
+    <div id="successToast" class="toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true" style="z-index: 1060; display: none;">
+        <div class="d-flex">
+            <div class="toast-body" id="toastMessage">
+                Success!
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
     </div>
     
-    <!-- JavaScript for Modal & Form Handling -->
+    <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Modal functions
+        // Initialize Bootstrap modals
+        const signupModal = new bootstrap.Modal(document.getElementById('signupModal'));
+        const otpModal = new bootstrap.Modal(document.getElementById('otpModal'));
+        const successToast = new bootstrap.Toast(document.getElementById('successToast'), { delay: 4000 });
+        
+        // Function to open signup modal (can be called from any button)
         function openSignupModal() {
-            document.getElementById('signupModal').classList.remove('modal-hidden');
-            document.body.style.overflow = 'hidden';
-        }
-        
-        function closeSignupModal() {
-            document.getElementById('signupModal').classList.add('modal-hidden');
-            document.body.style.overflow = 'auto';
-        }
-        
-        function openOtpModal(phone) {
-            // Mask phone for display
-            const maskedPhone = '+254 ' + phone.slice(-9, -4) + '••••';
-            document.getElementById('otpPhone').innerHTML = `Enter the code sent to <strong>${maskedPhone}</strong>`;
-            document.getElementById('otpPhoneInput').value = phone;
-            
-            document.getElementById('signupModal').classList.add('modal-hidden');
-            document.getElementById('otpModal').classList.remove('modal-hidden');
-        }
-        
-        function closeOtpModal() {
-            document.getElementById('otpModal').classList.add('modal-hidden');
-            document.getElementById('signupModal').classList.remove('modal-hidden');
-            document.body.style.overflow = 'auto';
+            signupModal.show();
         }
         
         // Phone form submission
@@ -1346,22 +1254,30 @@
             const phone = document.getElementById('phone').value;
             const name = document.getElementById('name_signup').value;
             
-            // Client-side validation
             if (!phone || phone.length < 9) {
                 alert('Please enter a valid phone number');
                 return;
             }
             
-            // Simulate sending code
             const button = this.querySelector('button[type="submit"]');
             button.disabled = true;
             button.textContent = 'Sending code...';
             
-            // In production, this would be an AJAX call
+            // Simulate AJAX call
             setTimeout(() => {
-                openOtpModal(phone);
+                // Mask phone for display
+                const masked = '+254 ' + phone.slice(-9, -4) + '••••';
+                document.getElementById('otpPhone').innerHTML = `Enter the code sent to <strong>${masked}</strong>`;
+                document.getElementById('otpPhoneInput').value = phone;
+                
+                signupModal.hide();
+                otpModal.show();
+                
                 button.disabled = false;
                 button.textContent = 'Send verification code';
+                
+                // Start resend timer when OTP modal opens
+                startResendTimer();
             }, 1500);
         });
         
@@ -1375,12 +1291,12 @@
                 return;
             }
             
-            // Simulate verification
             const button = this.querySelector('button[type="submit"]');
             button.disabled = true;
             button.textContent = 'Verifying...';
             
             setTimeout(() => {
+                otpModal.hide();
                 showToast('Account created! Redirecting to dashboard...');
                 setTimeout(() => {
                     window.location.href = '/dashboard';
@@ -1388,15 +1304,26 @@
             }, 1500);
         });
         
-        // Toast notification
-        function showToast(message) {
-            const toast = document.getElementById('successToast');
-            document.getElementById('toastMessage').textContent = message;
-            toast.classList.remove('hidden');
+        // Demo form submission
+        document.getElementById('demoForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const button = this.querySelector('button[type="submit"]');
+            button.disabled = true;
+            button.textContent = 'Sending...';
             
             setTimeout(() => {
-                toast.classList.add('hidden');
-            }, 4000);
+                showToast('Demo request sent! We\'ll contact you soon.');
+                this.reset();
+                button.disabled = false;
+                button.textContent = 'Send Request';
+            }, 1500);
+        });
+        
+        // Toast helper
+        function showToast(message) {
+            document.getElementById('toastMessage').textContent = message;
+            successToast.show();
         }
         
         // Resend OTP timer
@@ -1428,32 +1355,7 @@
             }
         });
         
-        // Demo form
-        document.getElementById('demoForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const button = this.querySelector('button[type="submit"]');
-            button.disabled = true;
-            button.textContent = 'Sending...';
-            
-            // Simulate form submission
-            setTimeout(() => {
-                showToast('Demo request sent! We\'ll contact you soon.');
-                this.reset();
-                button.disabled = false;
-                button.textContent = 'Send Request';
-            }, 1500);
-        });
-        
-        // Close modals on Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeSignupModal();
-                closeOtpModal();
-            }
-        });
-        
-        // Analytics tracking (GTM / GA setup hints)
+        // Analytics tracking placeholder
         function trackEvent(eventName, eventData = {}) {
             if (window.gtag) {
                 gtag('event', eventName, eventData);
@@ -1469,28 +1371,6 @@
                 }
             });
         });
-        
-        // Alternate hero images
-        const heroImage = document.getElementById('heroImage');
-        if (heroImage) {
-            const images = [
-                '{{ asset("images/hero-illustration.jpg") }}',
-                '{{ asset("images/farm.jpg") }}'
-            ];
-            let currentImageIndex = 0;
-            
-            setInterval(() => {
-                currentImageIndex = (currentImageIndex + 1) % images.length;
-                heroImage.style.opacity = '0.5';
-                setTimeout(() => {
-                    heroImage.src = images[currentImageIndex];
-                    heroImage.style.opacity = '1';
-                }, 300);
-            }, 5000); // Change image every 5 seconds
-            
-            // Add smooth transition
-            heroImage.style.transition = 'opacity 0.3s ease-in-out';
-        }
     </script>
     
     <!-- Google Tag Manager (noscript) placeholder -->

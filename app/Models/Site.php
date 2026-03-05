@@ -10,6 +10,33 @@ class Site extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::creating(function (Site $site) {
+            if (is_null($site->invoice_due_days)) {
+                $settings = PlatformSetting::firstOrCreate([]);
+                $site->invoice_due_days = (int) ($settings->default_invoice_due_days ?? 14);
+            }
+
+            if (empty($site->invoice_payment_method)) {
+                $site->invoice_payment_method = 'auto_wallet';
+            }
+        });
+
+        static::created(function (Site $site) {
+            // Create default policy when site is created
+            SitePolicy::create([
+                'site_id' => $site->id,
+                'lock_payout_method' => true,
+                'lock_invoice_payment_method' => true,
+                'lock_compliance_settings' => true,
+                'lock_payout_window' => false,
+                'lock_auto_payout' => false,
+                'lock_approval_workflow' => false,
+            ]);
+        });
+    }
+
     protected $fillable = [
         'owner_id',
         'name',
@@ -22,6 +49,8 @@ class Site extends Model
         'payout_method',
         'owner_mpesa_account',
         'billing_plan',
+        'invoice_payment_method',
+        'invoice_due_days',
     ];
 
     protected $casts = [
@@ -33,6 +62,11 @@ class Site extends Model
     public function owner()
     {
         return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function policy()
+    {
+        return $this->hasOne(SitePolicy::class);
     }
 
     public function workers(): HasMany
@@ -78,6 +112,16 @@ class Site extends Model
     public function members(): HasMany
     {
         return $this->hasMany(SiteMember::class);
+    }
+
+    public function inventoryCategories(): HasMany
+    {
+        return $this->hasMany(InventoryCategory::class);
+    }
+
+    public function inventoryItems(): HasMany
+    {
+        return $this->hasMany(InventoryItem::class);
     }
 
     public function inventoryStocks(): HasMany

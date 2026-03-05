@@ -40,6 +40,7 @@
     <div class="card-header bg-white border-0 pb-0">
         <ul class="nav nav-tabs card-header-tabs" id="settingsTabs" role="tablist">
             <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#payouts" type="button">Payouts</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing" type="button">Billing</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#communications" type="button">Communications</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#features" type="button">Features</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#access" type="button">Access & Roles</button></li>
@@ -58,6 +59,34 @@
             <form method="POST" action="{{ route('owner.sites.settings.payouts.update', $site) }}" class="row g-3" id="payoutSettingsForm">
                 @csrf
                 @method('PUT')
+
+                @if($policy->isCurrentlyLockedDown())
+                    <div class="col-12">
+                        <div class="alert alert-danger mb-3">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Site Locked:</strong> {{ $policy->lockdown_reason }}
+                            <br><small>Locked until {{ $policy->lockdown_until->format('M d, Y H:i') }}</small>
+                        </div>
+                    </div>
+                @endif
+
+                @if($policy->isPayoutMethodLocked() || $policy->isPayoutWindowLocked() || $policy->isAutoPayoutLocked())
+                    <div class="col-12">
+                        <div class="alert alert-warning mb-3">
+                            <i class="bi bi-shield-lock"></i> <strong>Admin-Locked Settings:</strong>
+                            <ul class="mb-0 mt-2 small">
+                                @if($policy->isPayoutMethodLocked())
+                                    <li>Payout Method (locked by admin)</li>
+                                @endif
+                                @if($policy->isPayoutWindowLocked())
+                                    <li>Payout Window (locked by admin)</li>
+                                @endif
+                                @if($policy->isAutoPayoutLocked())
+                                    <li>Auto-Payout Settings (locked by admin)</li>
+                                @endif
+                            </ul>
+                        </div>
+                    </div>
+                @endif
 
                 <div class="col-md-4">
                     <label class="form-label">Payout Account</label>
@@ -183,6 +212,99 @@
             </form>
         </div>
 
+        <div class="tab-pane fade" id="billing">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h6 class="mb-0">Billing & Invoice Configuration</h6>
+                <span class="badge text-bg-info">Platform Billing</span>
+            </div>
+
+            <form method="POST" action="{{ route('owner.sites.settings.billing.update', $site) }}" class="row g-3" id="billingSettingsForm">
+                @csrf
+                @method('PUT')
+
+                <div class="col-md-12">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Platform charges KES {{ $platformSettings->platform_fee_per_worker ?? 50 }} per active worker per {{ $platformSettings->billing_cadence ?? 'week' }}.
+                        Invoices are generated automatically every {{ ucfirst($platformSettings->billing_cadence ?? 'week') }}.
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label"><strong>Invoice Payment Method</strong></label>
+                    <select class="form-select" name="invoice_payment_method" required>
+                        <option value="auto_wallet" {{ $site->invoice_payment_method === 'auto_wallet' ? 'selected' : '' }}>
+                            Auto-Debit from Wallet (Default)
+                        </option>
+                        <option value="manual_mpesa" {{ $site->invoice_payment_method === 'manual_mpesa' ? 'selected' : '' }}>
+                            Manual M-Pesa (Owner Triggered STK)
+                        </option>
+                    </select>
+                    <small class="text-muted d-block mt-2">
+                        <strong>Auto-Debit:</strong> System tries wallet first. If balance is low, that invoice falls back to manual M-Pesa.<br>
+                        <strong>Manual M-Pesa:</strong> Owner triggers STK push from the invoice list when ready to pay.<br>
+                        <strong>Due Days:</strong> Controlled by platform admin settings.
+                    </small>
+                </div>
+
+                <div class="col-12 border-top pt-3 mt-3">
+                    <h6>Billing History</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Workers</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($site->invoices()->latest()->limit(5)->get() as $invoice)
+                                    <tr>
+                                        <td><small>{{ $invoice->period_start->format('M d') }} - {{ $invoice->period_end->format('M d, Y') }}</small></td>
+                                        <td><small>{{ $invoice->worker_count }}</small></td>
+                                        <td><small class="fw-semibold">KES {{ number_format($invoice->amount, 2) }}</small></td>
+                                        <td>
+                                            <small>
+                                                <span class="badge {{ $invoice->status === 'paid' ? 'text-bg-success' : ($invoice->status === 'overdue' ? 'text-bg-danger' : 'text-bg-warning') }}">
+                                                    {{ ucfirst($invoice->status) }}
+                                                </span>
+                                            </small>
+                                        </td>
+                                        <td><small class="text-muted">{{ $invoice->created_at->format('d M') }}</small></td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-3">No invoices yet</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2">
+                        <a href="{{ route('owner.invoices') }}" class="btn btn-sm btn-outline-primary">View All Invoices</a>
+                    </div>
+                </div>
+
+                <div class="col-12 border-top pt-3 mt-3">
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-shield-lock me-2"></i>
+                        Past-period invoice generation is restricted to platform admins.
+                    </div>
+                </div>
+
+                <div class="col-12 border-top pt-3 mt-3">
+                    <div class="mb-3">
+                        <label class="form-label">Reason (optional)</label>
+                        <input class="form-control" name="reason" placeholder="Reason for billing settings update">
+                    </div>
+                    <button class="btn btn-primary">Save Billing Settings</button>
+                </div>
+            </form>
+        </div>
+
         <div class="tab-pane fade" id="communications">
             <div class="d-flex align-items-center justify-content-between mb-3">
                 <h6 class="mb-0">Communications</h6>
@@ -192,6 +314,23 @@
             <form method="POST" action="{{ route('owner.sites.settings.communications.update', $site) }}" class="row g-3">
                 @csrf
                 @method('PUT')
+
+                @if($policy->isCurrentlyLockedDown())
+                    <div class="col-12">
+                        <div class="alert alert-danger mb-3">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Site Locked:</strong> {{ $policy->lockdown_reason }}
+                            <br><small>Locked until {{ $policy->lockdown_until->format('M d, Y H:i') }}</small>
+                        </div>
+                    </div>
+                @endif
+
+                @if($policy->isComplianceSettingsLocked())
+                    <div class="col-12">
+                        <div class="alert alert-warning mb-3">
+                            <i class="bi bi-shield-lock"></i> <strong>Compliance Settings Locked:</strong> Communication settings are locked by admin and cannot be modified.
+                        </div>
+                    </div>
+                @endif
 
                 <div class="col-md-4"><label class="form-label">SMS Sender</label><input class="form-control" name="sms_sender" value="{{ $communications['sms_sender'] ?? 'SITEGRID' }}"></div>
                 <div class="col-md-4"><label class="form-label">Provider Override</label><input class="form-control" name="sms_provider_override" value="{{ $communications['sms_provider_override'] ?? '' }}"></div>

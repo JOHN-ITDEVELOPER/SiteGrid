@@ -119,7 +119,7 @@
                                 </span>
                             </td>
                             <td>
-                                <small class="text-muted">{{ $invoice->due_date->format('M d, Y') }}</small>
+                                <small class="text-muted">{{ $invoice->due_date?->format('M d, Y') ?? 'N/A' }}</small>
                             </td>
                             <td>
                                 <a href="#" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#invoiceModal{{ $invoice->id }}">
@@ -142,7 +142,7 @@
                                                     </div>
                                                     <div class="col-md-6">
                                                         <p><strong>Period:</strong> {{ $invoice->period_start->format('M d, Y') }} - {{ $invoice->period_end->format('M d, Y') }}</p>
-                                                        <p><strong>Due Date:</strong> {{ $invoice->due_date->format('M d, Y') }}</p>
+                                                        <p><strong>Due Date:</strong> {{ $invoice->due_date?->format('M d, Y') ?? 'Not set' }}</p>
                                                     </div>
                                                 </div>
                                                 <div class="table-responsive">

@@ -21,6 +21,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'role',
         'kyc_status',
+        'is_suspended',
+        'suspension_reason',
+        'suspended_at',
+        'suspended_by',
+        'password_reset_required',
         'timezone',
         'locale',
         'notification_preferences',
@@ -34,6 +39,9 @@ class User extends Authenticatable implements MustVerifyEmail
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'suspended_at' => 'datetime',
+        'is_suspended' => 'boolean',
+        'password_reset_required' => 'boolean',
         'notification_preferences' => 'array',
     ];
 

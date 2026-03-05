@@ -23,6 +23,7 @@ class MpesaTransaction extends Model
         'status',
         'related_model',
         'related_id',
+        'platform_account_id',
         'raw_response',
     ];
 
@@ -54,6 +55,14 @@ class MpesaTransaction extends Model
             'result_code' => $resultCode,
             'result_description' => $resultDescription,
         ]);
+    }
+
+    /**
+     * Get the platform account that processed this transaction.
+     */
+    public function platformAccount()
+    {
+        return $this->belongsTo(PlatformAccount::class, 'platform_account_id');
     }
 
     /**

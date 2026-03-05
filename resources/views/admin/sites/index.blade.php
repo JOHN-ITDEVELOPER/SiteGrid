@@ -7,7 +7,9 @@
             <h1 class="h2 text-dark">All Sites</h1>
             <p class="text-muted">Manage all construction sites on Mjengo</p>
         </div>
-        <a href="{{ route('admin.dashboard') }}" class="btn btn-outline-secondary">← Back</a>
+        <a href="{{ route('admin.sites.create') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Create Site
+        </a>
     </div>
 
     <!-- Search -->
@@ -34,7 +36,7 @@
                     <th>Workers</th>
                     <th>Status</th>
                     <th>Created</th>
-                    <th>Actions</th>
+                    <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -54,8 +56,9 @@
                             </span>
                         </td>
                         <td class="text-muted small">{{ $site->created_at->format('M d, Y') }}</td>
-                        <td>
-                            <a href="{{ route('admin.sites.show', $site) }}" class="btn btn-sm btn-outline-primary">View</a>
+                        <td class="text-end">
+                            <a href="{{ route('admin.sites.show', $site) }}" class="btn btn-sm btn-outline-secondary">View</a>
+                            <a href="{{ route('admin.sites.edit', $site) }}" class="btn btn-sm btn-outline-primary">Edit</a>
                         </td>
                     </tr>
                 @empty

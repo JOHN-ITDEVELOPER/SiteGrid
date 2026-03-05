@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Invoice;
 use App\Models\MpesaTransaction;
 use App\Models\OwnerWallet;
 use App\Models\Payout;
@@ -39,6 +40,15 @@ class MpesaCallbackController extends Controller
         // Update transaction with callback data
         $transaction->raw_response = array_merge($transaction->raw_response ?? [], $callbackData);
 
+        if ($transaction->status === 'completed') {
+            Log::info('Duplicate STK callback ignored', [
+                'transaction_id' => $transaction->id,
+                'checkout_request_id' => $checkoutRequestId,
+            ]);
+
+            return response()->json(['ResultCode' => 0, 'ResultDesc' => 'Success']);
+        }
+
         if ($resultCode == 0) {
             // Payment successful - extract metadata
             $amount = null;
@@ -59,20 +69,78 @@ class MpesaCallbackController extends Controller
 
             $transaction->markAsCompleted($mpesaReceipt, $resultDesc);
             
-            // Credit the wallet
+            // Credit wallet top-up transactions (deposits)
             if ($transaction->related_model === OwnerWallet::class && $transaction->related_id) {
                 $wallet = OwnerWallet::find($transaction->related_id);
                 if ($wallet) {
+                    // Get primary deposit account from platform settings
+                    $settings = \App\Models\PlatformSetting::firstOrCreate([]);
+                    $deposit_account_id = $settings->platform_deposit_account_id;
+                    $deposit_account = \App\Models\PlatformAccount::find($deposit_account_id);
+                    
+                    // Credit the wallet
                     $wallet->credit(
                         $amount ?? $transaction->amount,
                         'top_up',
                         $transaction->id,
-                        "M-Pesa top-up - Receipt: {$mpesaReceipt}"
+                        "M-Pesa deposit to wallet - Receipt: {$mpesaReceipt}"
                     );
-                    Log::info('Wallet credited', [
+                    
+                    // Update transaction to track which account processed the deposit
+                    $transaction->update([
+                        'platform_account_id' => $deposit_account_id,
+                    ]);
+                    
+                    Log::info('Deposit processed to wallet', [
                         'wallet_id' => $wallet->id,
-                        'amount' => $amount,
-                        'receipt' => $mpesaReceipt
+                        'amount' => $amount ?? $transaction->amount,
+                        'receipt' => $mpesaReceipt,
+                        'account_id' => $deposit_account_id,
+                        'account_shortcode' => $deposit_account?->shortcode,
+                        'transaction_id' => $transaction->id,
+                    ]);
+                }
+            }
+
+            // Reconcile invoice payments → Platform Revenue
+            if ($transaction->related_model === Invoice::class && $transaction->related_id) {
+                $invoice = Invoice::find($transaction->related_id);
+                if ($invoice && $invoice->status !== 'paid') {
+                    // Update invoice status
+                    $invoice->update([
+                        'status' => 'paid',
+                        'paid_at' => now(),
+                        'notes' => trim(($invoice->notes ? $invoice->notes . ' | ' : '') . "Paid via M-Pesa STK - Receipt: {$mpesaReceipt}"),
+                    ]);
+
+                    // Get primary invoice account from platform settings
+                    $settings = \App\Models\PlatformSetting::firstOrCreate([]);
+                    $invoice_account_id = $settings->platform_invoice_account_id;
+                    $invoice_account = \App\Models\PlatformAccount::find($invoice_account_id);
+
+                    // Create platform revenue record
+                    \App\Models\PlatformRevenue::create([
+                        'invoice_id' => $invoice->id,
+                        'mpesa_transaction_id' => $transaction->id,
+                        'amount' => $amount ?? $invoice->amount,
+                        'currency' => 'KES',
+                        'mpesa_receipt' => $mpesaReceipt,
+                        'platform_account_id' => $invoice_account_id,
+                        'destination_shortcode' => $invoice_account?->shortcode,
+                        'status' => 'received',
+                        'received_at' => now(),
+                        'metadata' => [
+                            'phone_number' => $phoneNumber,
+                            'transaction_id' => $transaction->id,
+                        ],
+                    ]);
+
+                    Log::info('Invoice marked as paid + revenue recorded', [
+                        'invoice_id' => $invoice->id,
+                        'amount' => $amount ?? $invoice->amount,
+                        'receipt' => $mpesaReceipt,
+                        'transaction_id' => $transaction->id,
+                        'account_id' => $invoice_account_id,
                     ]);
                 }
             }

@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Services\OtpService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
 {
@@ -72,6 +71,15 @@ class AuthController extends Controller
                 'kyc_status' => 'pending',
             ]
         );
+
+        // Check if user is suspended
+        if ($user->is_suspended) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account has been suspended. Reason: ' . $user->suspension_reason,
+                'account_suspended' => true,
+            ], 403);
+        }
 
         // Generate token
         $token = $user->createToken('auth_token')->plainTextToken;

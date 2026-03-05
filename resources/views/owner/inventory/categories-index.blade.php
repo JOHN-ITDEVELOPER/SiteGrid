@@ -10,10 +10,27 @@
             <h1 class="h3 fw-bold text-dark">Inventory Categories</h1>
             <p class="text-muted">Manage inventory categories and items for {{ $selectedSite->name ?? 'your site' }}</p>
         </div>
-        <a href="{{ route('owner.inventory.categories.create', ['site_id' => $selectedSite->id ?? '']) }}" class="btn btn-primary">
+        @if($selectedSite)
+        <a href="{{ route('owner.inventory.categories.create', ['site_id' => $selectedSite->id]) }}" class="btn btn-primary">
             <i class="bi bi-plus-lg"></i> Add Category
         </a>
+        @endif
     </div>
+
+    <!-- No Sites Message -->
+    @if(count($sites) === 0)
+    <div class="alert alert-warning border-0 rounded-3 mb-4" role="alert">
+        <div class="d-flex align-items-center gap-3">
+            <div class="flex-shrink-0">
+                <i class="bi bi-exclamation-triangle fs-5"></i>
+            </div>
+            <div class="flex-grow-1">
+                <h6 class="alert-heading mb-1">No Sites Available</h6>
+                <p class="mb-0 text-sm">You need to create or be assigned to a site before managing inventory. Visit your dashboard to create a new site.</p>
+            </div>
+        </div>
+    </div>
+    @endif
 
     <!-- Site Selector -->
     @if(count($sites) > 1)
@@ -35,8 +52,8 @@
     </div>
     @endif
 
-    <!-- Template Selector (if no categories yet) -->
-    @if($categories->isEmpty() && $templates)
+    <!-- Template Selector (if no categories yet and site selected) -->
+    @if(count($categories) === 0 && $selectedSite && $templates)
     <div class="alert alert-info border-0 rounded-3 mb-4" role="alert">
         <div class="d-flex align-items-center gap-3">
             <div class="flex-shrink-0">
@@ -63,7 +80,7 @@
     @endif
 
     <!-- Categories List -->
-    @if($categories->isNotEmpty())
+    @if(count($categories) > 0)
     <div class="card border-0 shadow-sm">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
@@ -124,9 +141,11 @@
         <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
         <h5 class="text-muted">No categories yet</h5>
         <p class="text-muted mb-3">Create your first category or use a quick-start template above</p>
-        <a href="{{ route('owner.inventory.categories.create', ['site_id' => $selectedSite->id ?? '']) }}" class="btn btn-primary btn-sm">
+        @if($selectedSite)
+        <a href="{{ route('owner.inventory.categories.create', ['site_id' => $selectedSite->id]) }}" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-lg"></i> Create Category
         </a>
+        @endif
     </div>
     @endif
 </div>

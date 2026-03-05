@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\ForemanController;
 use App\Http\Controllers\Api\V1\WorkerController;
+use App\Http\Controllers\Api\V1\UssdController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MpesaCallbackController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,13 @@ use Illuminate\Support\Facades\Route;
 // M-Pesa Callbacks (no auth required)
 Route::post('/mpesa/callback/stk', [MpesaCallbackController::class, 'stkCallback'])->name('mpesa.callback.stk');
 Route::post('/mpesa/callback/b2c', [MpesaCallbackController::class, 'b2cCallback'])->name('mpesa.callback.b2c');
+
+// USSD Callbacks (no auth required - Africa's Talking webhook)
+Route::post('/ussd/callback', [UssdController::class, 'handleRequest'])->name('ussd.callback');
+
+// USSD Simulation & Testing (development only)
+Route::post('/ussd/simulate', [UssdController::class, 'simulate'])->name('ussd.simulate');
+Route::get('/ussd/statistics', [UssdController::class, 'statistics'])->name('ussd.statistics');
 
 // Public authentication routes
 Route::prefix('v1')->group(function () {

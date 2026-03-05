@@ -16,6 +16,8 @@ class Invoice extends Model
         'worker_count',
         'amount',
         'status',
+        'due_date',
+        'payment_method',
         'paid_at',
         'notes',
     ];
@@ -23,6 +25,7 @@ class Invoice extends Model
     protected $casts = [
         'period_start' => 'date',
         'period_end' => 'date',
+        'due_date' => 'date',
         'paid_at' => 'datetime',
     ];
 

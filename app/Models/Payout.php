@@ -26,12 +26,19 @@ class Payout extends Model
         'escrow_released_at',
         'escrow_held_by',
         'escrow_reason',
+        'approved_by',
+        'approved_at',
+        'rejected_at',
+        'rejection_reason',
+        'approval_status',
     ];
 
     protected $casts = [
         'paid_at' => 'datetime',
         'escrow_held_at' => 'datetime',
         'escrow_released_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     // Relationships
@@ -48,5 +55,15 @@ class Payout extends Model
     public function mpesaTransaction()
     {
         return $this->belongsTo(MpesaTransaction::class);
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function adjustments()
+    {
+        return $this->hasMany(PayoutAdjustment::class);
     }
 }

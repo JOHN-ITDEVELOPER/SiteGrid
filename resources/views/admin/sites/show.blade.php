@@ -6,8 +6,23 @@
         <div>
             <h1 class="h2 text-dark">{{ $site->name }}</h1>
             <p class="text-muted">{{ $site->location }}</p>
+            @if($site->policy && $site->policy->isCurrentlyLockedDown())
+                <div class="alert alert-danger d-inline-flex align-items-center gap-2 py-2 px-3 mt-2">
+                    <i class="bi bi-shield-exclamation"></i>
+                    <strong>Site Locked:</strong> {{ $site->policy->lockdown_reason }}
+                    <span class="badge bg-danger ms-2">Until {{ $site->policy->lockdown_until->format('M d, H:i') }}</span>
+                </div>
+            @endif
         </div>
-        <a href="{{ route('admin.sites.index') }}" class="btn btn-outline-secondary">← Back</a>
+        <div class="d-flex gap-2">
+            <a href="{{ route('admin.sites.policy.edit', $site) }}" class="btn btn-outline-warning">
+                <i class="bi bi-shield-lock"></i> Policy
+            </a>
+            <a href="{{ route('admin.sites.edit', $site) }}" class="btn btn-primary">
+                <i class="bi bi-pencil"></i> Edit Site
+            </a>
+            <a href="{{ route('admin.sites.index') }}" class="btn btn-outline-secondary">← Back</a>
+        </div>
     </div>
 
     <div class="row g-4">
@@ -36,6 +51,16 @@
                         <div class="col-md-6">
                             <p class="text-muted small mb-1">Payout Window</p>
                             <p class="fw-semibold">{{ $site->payout_window_start }} - {{ $site->payout_window_end }}</p>
+                        </div>
+                        @if($site->payout_method === 'owner_managed' && $site->owner_mpesa_account)
+                            <div class="col-md-6">
+                                <p class="text-muted small mb-1">Owner M-Pesa Account</p>
+                                <p class="fw-semibold">{{ $site->owner_mpesa_account }}</p>
+                            </div>
+                        @endif
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Invoice Due Days</p>
+                            <p class="fw-semibold">{{ $site->invoice_due_days }} days</p>
                         </div>
                     </div>
                 </div>

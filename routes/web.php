@@ -13,6 +13,8 @@ use App\Http\Controllers\Admin\ActivityFeedController;
 use App\Http\Controllers\Admin\ImpersonationController;
 use App\Http\Controllers\Admin\GlobalSearchController;
 use App\Http\Controllers\Admin\EscrowController;
+use App\Http\Controllers\Admin\PayoutOverrideController;
+use App\Http\Controllers\Admin\FinancialReportsController;
 use App\Http\Controllers\Admin\InventoryController as AdminInventoryController;
 use App\Http\Controllers\Foreman\DashboardController as ForemanDashboardController;
 use App\Http\Controllers\Foreman\InventoryController as ForemanInventoryController;
@@ -90,14 +92,45 @@ Route::middleware(['auth'])->group(function () {
 // Admin Dashboard
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    
+    // Site routes - create and edit must come before resource
+    Route::get('/sites/create', [DashboardController::class, 'createSite'])->name('sites.create');
+    Route::get('/sites/{site}/edit', [DashboardController::class, 'editSite'])->name('sites.edit');
     Route::get('/sites', [DashboardController::class, 'sites'])->name('sites.index');
+    Route::post('/sites', [DashboardController::class, 'storeSite'])->name('sites.store');
     Route::get('/sites/{site}', [DashboardController::class, 'siteShow'])->name('sites.show');
+    Route::put('/sites/{site}', [DashboardController::class, 'updateSite'])->name('sites.update');
+    Route::delete('/sites/{site}', [DashboardController::class, 'deleteSite'])->name('sites.delete');
+    
+    // Site Policy routes
+    Route::get('/sites/{site}/policy', [DashboardController::class, 'editSitePolicy'])->name('sites.policy.edit');
+    Route::put('/sites/{site}/policy', [DashboardController::class, 'updateSitePolicy'])->name('sites.policy.update');
+    Route::post('/sites/{site}/lockdown', [DashboardController::class, 'lockdownSite'])->name('sites.lockdown');
+    Route::post('/sites/{site}/unlock', [DashboardController::class, 'unlockdownSite'])->name('sites.unlock');
+    
     Route::get('/payouts', [DashboardController::class, 'payouts'])->name('payouts.index');
     Route::get('/invoices', [DashboardController::class, 'invoices'])->name('invoices.index');
-    Route::resource('/users', UsersController::class)->except(['create', 'edit']);
+    
+    // Worker routes - specific routes must come before resource
+    Route::get('/workers', [\App\Http\Controllers\Admin\WorkersController::class, 'index'])->name('workers.index');
+    Route::get('/workers/create', [\App\Http\Controllers\Admin\WorkersController::class, 'create'])->name('workers.create');
+    Route::post('/workers', [\App\Http\Controllers\Admin\WorkersController::class, 'store'])->name('workers.store');
+    Route::get('/workers/{worker}/edit', [\App\Http\Controllers\Admin\WorkersController::class, 'edit'])->name('workers.edit');
+    Route::put('/workers/{worker}', [\App\Http\Controllers\Admin\WorkersController::class, 'update'])->name('workers.update');
+    Route::post('/workers/{worker}/deactivate', [\App\Http\Controllers\Admin\WorkersController::class, 'deactivate'])->name('workers.deactivate');
+    Route::post('/workers/{worker}/reactivate', [\App\Http\Controllers\Admin\WorkersController::class, 'reactivate'])->name('workers.reactivate');
+    Route::get('/workers/user/{user}/history', [\App\Http\Controllers\Admin\WorkersController::class, 'history'])->name('workers.history');
+    Route::post('/workers-bulk', [\App\Http\Controllers\Admin\WorkersController::class, 'bulkAction'])->name('workers.bulk');
+    
+    // User routes - specific routes must come before resource
     Route::get('/users/create', [UsersController::class, 'create'])->name('users.create');
     Route::get('/users/{user}/edit', [UsersController::class, 'edit'])->name('users.edit');
+    Route::resource('/users', UsersController::class)->except(['create', 'edit']);
     Route::post('/users/{user}/sites', [UsersController::class, 'storeSiteForOwner'])->name('users.sites.store');
+    Route::post('/users/{user}/suspend', [UsersController::class, 'suspend'])->name('users.suspend');
+    Route::post('/users/{user}/reactivate', [UsersController::class, 'reactivateUser'])->name('users.reactivate');
+    Route::post('/users/{user}/force-password-reset', [UsersController::class, 'forcePasswordReset'])->name('users.force-password-reset');
+    Route::get('/users/{user}/activity', [UsersController::class, 'activity'])->name('users.activity');
     Route::get('/users-export', [UsersController::class, 'export'])->name('users.export');
     Route::post('/users-bulk', [UsersController::class, 'bulkAction'])->name('users.bulk');
     Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
@@ -106,6 +139,12 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::post('/settings/preview-invoice', [SettingsController::class, 'previewInvoice'])->name('settings.preview-invoice');
     Route::post('/settings/trigger-backup', [SettingsController::class, 'triggerBackup'])->name('settings.trigger-backup');
     Route::post('/settings/simulate-ussd', [SettingsController::class, 'simulateUssd'])->name('settings.simulate-ussd');
+
+    // Payment Accounts (new - for deposit/invoice/payout routing)
+    Route::get('/accounts', [SettingsController::class, 'accounts'])->name('accounts.index');
+    Route::post('/accounts/save', [SettingsController::class, 'saveAccount'])->name('accounts.save');
+    Route::post('/accounts/{id}/test', [SettingsController::class, 'testAccount'])->name('accounts.test');
+
     Route::get('/audit', [AuditLogsController::class, 'index'])->name('audit.index');
     Route::get('/kyc/pending', [DashboardController::class, 'kycPending'])->name('kyc.pending');
     Route::post('/kyc/{user}/approve', [DashboardController::class, 'approveKyc'])->name('kyc.approve');
@@ -147,8 +186,26 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::post('/payouts/{payout}/release', [EscrowController::class, 'release'])->name('payouts.release');
     Route::post('/payouts/{payout}/dispute', [EscrowController::class, 'dispute'])->name('payouts.dispute');
 
+    // Payout Override/Approval
+    Route::post('/payouts/{payout}/approve', [PayoutOverrideController::class, 'approve'])->name('payouts.approve');
+    Route::post('/payouts/{payout}/reject', [PayoutOverrideController::class, 'reject'])->name('payouts.reject');
+    Route::post('/payouts/bulk/approve', [PayoutOverrideController::class, 'bulkApprove'])->name('payouts.bulk-approve');
+    Route::post('/payouts/bulk/reject', [PayoutOverrideController::class, 'bulkReject'])->name('payouts.bulk-reject');
+
+    // Financial Reports
+    Route::get('/financial/dashboard', [FinancialReportsController::class, 'dashboard'])->name('financial.dashboard');
+    Route::get('/financial/revenue', [FinancialReportsController::class, 'revenue'])->name('financial.revenue');
+    Route::get('/financial/platform-revenue', [FinancialReportsController::class, 'platformRevenue'])->name('financial.platform-revenue');
+    Route::get('/financial/fee-analysis', [FinancialReportsController::class, 'feeAnalysis'])->name('financial.fee-analysis');
+    Route::get('/financial/reconciliation', [FinancialReportsController::class, 'reconciliation'])->name('financial.reconciliation');
+    Route::get('/financial/export', [FinancialReportsController::class, 'export'])->name('financial.export');
+
     // Inventory Command Center
     Route::get('/inventory', [AdminInventoryController::class, 'index'])->name('inventory.index');
+    Route::get('/inventory/progress/{progressLog}', [AdminInventoryController::class, 'showProgress'])->name('inventory.progress.show');
+    Route::post('/inventory/requests/{procurementRequest}/approve', [AdminInventoryController::class, 'approveProcurement'])->name('inventory.requests.approve');
+    Route::post('/inventory/requests/{procurementRequest}/reject', [AdminInventoryController::class, 'rejectProcurement'])->name('inventory.requests.reject');
+    Route::delete('/inventory/requests/{procurementRequest}', [AdminInventoryController::class, 'deleteProcurement'])->name('inventory.requests.destroy');
 });
 
 // Site Owner Dashboard
@@ -167,7 +224,7 @@ Route::middleware(['auth', 'owner'])->prefix('owner')->name('owner.')->group(fun
     // Existing Actions
     Route::post('/paycycles/{paycycle}/approve', [OwnerDashboardController::class, 'approvePaycycle'])->name('paycycles.approve');
     Route::post('/payouts/{payout}/acknowledge-dispute', [OwnerDashboardController::class, 'acknowledgeDispute'])->name('payouts.acknowledge-dispute');
-    Route::post('/invoices/{invoice}/proof', [OwnerDashboardController::class, 'uploadInvoiceProof'])->name('invoices.upload-proof');
+    Route::post('/invoices/{invoice}/retry-payment', [OwnerDashboardController::class, 'retryInvoicePayment'])->name('invoices.retry-payment');
     
     // Worker Management
     Route::get('/workers/add', [OwnerDashboardController::class, 'addWorker'])->name('workers.add');
@@ -175,10 +232,12 @@ Route::middleware(['auth', 'owner'])->prefix('owner')->name('owner.')->group(fun
     Route::get('/workers/{worker}/edit', [OwnerDashboardController::class, 'editWorker'])->name('workers.edit');
     Route::put('/workers/{worker}', [OwnerDashboardController::class, 'updateWorker'])->name('workers.update');
     Route::post('/workers/{worker}/deactivate', [OwnerDashboardController::class, 'deactivateWorker'])->name('workers.deactivate');
+    Route::post('/workers/{worker}/reactivate', [OwnerDashboardController::class, 'reactivateWorker'])->name('workers.reactivate');
     
     // Attendance Management
     Route::get('/attendance', [OwnerDashboardController::class, 'attendance'])->name('attendance');
     Route::post('/attendance/mark', [OwnerDashboardController::class, 'markAttendance'])->name('attendance.mark');
+    Route::post('/attendance/bulk-mark', [OwnerDashboardController::class, 'bulkMarkAttendance'])->name('attendance.bulk-mark');
     
     // Pay-Cycle Management
     Route::get('/paycycles/create', [OwnerDashboardController::class, 'createPaycycle'])->name('paycycles.create');
@@ -195,9 +254,14 @@ Route::middleware(['auth', 'owner'])->prefix('owner')->name('owner.')->group(fun
 
     // Inventory & Procurement
     Route::get('/inventory', [OwnerInventoryController::class, 'index'])->name('inventory.index');
+    Route::get('/inventory/progress/{progressLog}', [OwnerInventoryController::class, 'showProgress'])->name('inventory.progress.show');
+    Route::post('/inventory/progress/{progressLog}/status', [OwnerInventoryController::class, 'updateProgressStatus'])->name('inventory.progress.update-status');
     Route::post('/inventory/requests/{procurementRequest}/approve', [OwnerInventoryController::class, 'approve'])->name('inventory.requests.approve');
     Route::post('/inventory/requests/{procurementRequest}/reject', [OwnerInventoryController::class, 'reject'])->name('inventory.requests.reject');
     Route::post('/inventory/requests/{procurementRequest}/receive', [OwnerInventoryController::class, 'receive'])->name('inventory.requests.receive');
+    Route::post('/inventory/direct-stock-in', [OwnerInventoryController::class, 'directStockIn'])->name('inventory.direct-stock-in');
+    Route::patch('/inventory/stocks/{inventoryStock}/threshold', [OwnerInventoryController::class, 'updateThreshold'])->name('inventory.update-threshold');
+    Route::delete('/inventory/requests/{procurementRequest}', [OwnerInventoryController::class, 'deleteProcurement'])->name('inventory.requests.destroy');
     
     // Inventory Categories Management
     Route::get('/inventory/categories', [InventoryCategoryController::class, 'index'])->name('inventory.categories.index');
@@ -226,6 +290,7 @@ Route::middleware(['auth', 'owner'])->prefix('owner')->name('owner.')->group(fun
     Route::get('/sites/{site}/settings', [SiteSettingsController::class, 'edit'])->name('sites.settings');
     Route::put('/sites/{site}/settings/payouts', [SiteSettingsController::class, 'updatePayouts'])->name('sites.settings.payouts.update');
     Route::post('/sites/{site}/settings/payouts/test', [SiteSettingsController::class, 'testPayoutAccount'])->name('sites.settings.payouts.test');
+    Route::put('/sites/{site}/settings/billing', [SiteSettingsController::class, 'updateBilling'])->name('sites.settings.billing.update');
     Route::put('/sites/{site}/settings/communications', [SiteSettingsController::class, 'updateCommunications'])->name('sites.settings.communications.update');
     Route::post('/sites/{site}/settings/communications/preview', [SiteSettingsController::class, 'previewTemplate'])->name('sites.settings.communications.preview');
     Route::post('/sites/{site}/settings/communications/test-sms', [SiteSettingsController::class, 'sendTestSms'])->name('sites.settings.communications.test-sms');
@@ -258,6 +323,7 @@ Route::middleware(['auth'])->prefix('field')->name('field.')->group(function () 
     Route::middleware('foreman')->group(function () {
         Route::get('/roster', [ForemanDashboardController::class, 'rosterIndex'])->name('roster');
         Route::post('/attendance/mark', [ForemanDashboardController::class, 'markAttendance'])->name('attendance.mark');
+        Route::post('/attendance/bulk-mark', [ForemanDashboardController::class, 'bulkMarkAttendance'])->name('attendance.bulk-mark');
         Route::post('/attendance/bulk', [ForemanDashboardController::class, 'bulkAttendance'])->name('attendance.bulk');
         Route::get('/claims-approval', [ForemanDashboardController::class, 'claimsApprovalIndex'])->name('claims-approval');
         Route::post('/claims/bulk-action', [ForemanDashboardController::class, 'bulkClaimAction'])->name('claims.bulk-action');
@@ -265,6 +331,7 @@ Route::middleware(['auth'])->prefix('field')->name('field.')->group(function () 
         Route::post('/add-worker', [ForemanDashboardController::class, 'storeWorker'])->name('add-worker.store');
 
         Route::get('/inventory', [ForemanInventoryController::class, 'index'])->name('inventory.index');
+        Route::get('/inventory/progress/{progressLog}', [ForemanInventoryController::class, 'showProgress'])->name('inventory.progress.show');
         Route::post('/inventory/requests', [ForemanInventoryController::class, 'storeRequest'])->name('inventory.requests.store');
         Route::post('/inventory/usage', [ForemanInventoryController::class, 'storeUsage'])->name('inventory.usage.store');
         Route::post('/inventory/progress', [ForemanInventoryController::class, 'storeProgress'])->name('inventory.progress.store');

@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\OtpSession;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
 
 class OtpService
 {
@@ -32,11 +31,18 @@ class OtpService
             'expires_at' => Carbon::now()->addMinutes(self::OTP_EXPIRY_MINUTES),
         ]);
 
-        // TODO: Send SMS via Africa's Talking
-        // $this->sendSms($phone, "Your SiteGrid verification code is: {$otpCode}");
+        // Send SMS via Africa's Talking
+        try {
+            $this->sendSms($phone, "Your SiteGrid verification code is: {$otpCode}. Valid for " . self::OTP_EXPIRY_MINUTES . " minutes.");
+        } catch (\Exception $e) {
+            \Log::error("Failed to send OTP SMS to {$phone}: " . $e->getMessage());
+            // Continue anyway - log shows the OTP for development
+        }
 
-        // For MVP, log to console
-        \Log::info("OTP for {$phone}: {$otpCode}");
+        // For development, also log to console
+        if (app()->environment('local', 'development')) {
+            \Log::info("OTP for {$phone}: {$otpCode}");
+        }
 
         return $otpSession;
     }
@@ -90,4 +96,56 @@ class OtpService
     {
         OtpSession::where('expires_at', '<', Carbon::now())->delete();
     }
-}
+    /**
+     * Send SMS via Africa's Talking
+     */
+    private function sendSms(string $phone, string $message): bool
+    {
+        $username = config('services.africastalking.username');
+        $apiKey = config('services.africastalking.api_key');
+        $from = config('services.africastalking.from', 'SITEGRID');
+
+        if (empty($username) || empty($apiKey)) {
+            \Log::warning('Africa\'s Talking credentials not configured');
+            return false;
+        }
+
+        try {
+            $client = new \GuzzleHttp\Client();
+            
+            $response = $client->post('https://api.africastalking.com/version1/messaging', [
+                'headers' => [
+                    'apiKey' => $apiKey,
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                    'Accept' => 'application/json',
+                ],
+                'form_params' => [
+                    'username' => $username,
+                    'to' => $phone,
+                    'message' => $message,
+                    'from' => $from,
+                ],
+            ]);
+
+            $result = json_decode($response->getBody()->getContents(), true);
+            
+            \Log::info('SMS sent via Africa\'s Talking', [
+                'phone' => $phone,
+                'result' => $result,
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            \Log::error('Africa\'s Talking SMS Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send notification SMS (for payment confirmations, etc.)
+     */
+    public function sendNotification(string $phone, string $message): bool
+    {
+        return $this->sendSms($phone, $message);
+    }}

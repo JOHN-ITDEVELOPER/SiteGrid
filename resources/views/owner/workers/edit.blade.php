@@ -19,6 +19,31 @@
                     @method('PUT')
                     
                     <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Select Site *</label>
+                            <select class="form-select @error('site_id') is-invalid @enderror" name="site_id" required>
+                                <option value="">-- Choose Site --</option>
+                                @foreach($sites as $site)
+                                    <option value="{{ $site->id }}" {{ old('site_id', $worker->site_id) == $site->id ? 'selected' : '' }}>
+                                        {{ $site->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('site_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Worker Name *</label>
+                            <input type="text" class="form-control @error('name') is-invalid @enderror" name="name" value="{{ old('name', $worker->user->name) }}" required>
+                            @error('name')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Phone Number *</label>
+                            <input type="text" class="form-control @error('phone') is-invalid @enderror" name="phone" value="{{ old('phone', $worker->user->phone) }}" required>
+                            @error('phone')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+
                         <div class="col-md-6">
                             <label class="form-label">Role</label>
                             <input type="text" class="form-control @error('role') is-invalid @enderror" name="role" value="{{ old('role', $worker->role) }}">

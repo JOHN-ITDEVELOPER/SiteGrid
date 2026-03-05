@@ -16,7 +16,7 @@ class InventoryItemController extends Controller
      */
     public function index(Request $request, InventoryCategory $category)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds)) {
             abort(403, 'Unauthorized');
@@ -37,7 +37,7 @@ class InventoryItemController extends Controller
      */
     public function create(Request $request, InventoryCategory $category)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds)) {
             abort(403, 'Unauthorized');
@@ -54,15 +54,28 @@ class InventoryItemController extends Controller
      */
     public function store(Request $request, InventoryCategory $category)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds)) {
             abort(403, 'Unauthorized');
         }
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:inventory_items,name,NULL,id,site_id,' . $category->site_id . ',category_id,' . $category->id,
-            'sku' => 'nullable|string|max:100|unique:inventory_items,sku,NULL,id,site_id,' . $category->site_id,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('inventory_items')
+                    ->where('site_id', $category->site_id)
+                    ->where('category_id', $category->id),
+            ],
+            'sku' => [
+                'nullable',
+                'string',
+                'max:100',
+                \Illuminate\Validation\Rule::unique('inventory_items')
+                    ->where('site_id', $category->site_id),
+            ],
             'unit' => 'required|string|max:50',
             'is_active' => 'boolean',
             'description' => 'nullable|string|max:1000',
@@ -72,10 +85,13 @@ class InventoryItemController extends Controller
         $validated['category_id'] = $category->id;
         $validated['is_active'] = $request->boolean('is_active', true);
 
-        InventoryItem::create($validated);
-
-        return redirect()->route('owner.inventory.items.index', $category->id)
-            ->with('success', 'Item created successfully');
+        try {
+            InventoryItem::create($validated);
+            return redirect()->route('owner.inventory.items.index', $category->id)
+                ->with('success', 'Item created successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to create item: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -83,7 +99,7 @@ class InventoryItemController extends Controller
      */
     public function edit(Request $request, InventoryCategory $category, InventoryItem $item)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds) || $item->category_id !== $category->id) {
             abort(403, 'Unauthorized');
@@ -100,7 +116,7 @@ class InventoryItemController extends Controller
      */
     public function update(Request $request, InventoryCategory $category, InventoryItem $item)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds) || $item->category_id !== $category->id) {
             abort(403, 'Unauthorized');
@@ -109,8 +125,23 @@ class InventoryItemController extends Controller
         $siteId = $category->site_id;
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:inventory_items,name,' . $item->id . ',id,site_id,' . $siteId . ',category_id,' . $category->id,
-            'sku' => 'nullable|string|max:100|unique:inventory_items,sku,' . $item->id . ',id,site_id,' . $siteId,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('inventory_items')
+                    ->where('site_id', $siteId)
+                    ->where('category_id', $category->id)
+                    ->ignore($item->id),
+            ],
+            'sku' => [
+                'nullable',
+                'string',
+                'max:100',
+                \Illuminate\Validation\Rule::unique('inventory_items')
+                    ->where('site_id', $siteId)
+                    ->ignore($item->id),
+            ],
             'unit' => 'required|string|max:50',
             'is_active' => 'boolean',
             'description' => 'nullable|string|max:1000',
@@ -118,10 +149,13 @@ class InventoryItemController extends Controller
 
         $validated['is_active'] = $request->boolean('is_active', true);
 
-        $item->update($validated);
-
-        return redirect()->route('owner.inventory.items.index', $category->id)
-            ->with('success', 'Item updated successfully');
+        try {
+            $item->update($validated);
+            return redirect()->route('owner.inventory.items.index', $category->id)
+                ->with('success', 'Item updated successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to update item: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -129,7 +163,7 @@ class InventoryItemController extends Controller
      */
     public function destroy(InventoryCategory $category, InventoryItem $item)
     {
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($category->site_id, $ownerSiteIds) || $item->category_id !== $category->id) {
             abort(403, 'Unauthorized');

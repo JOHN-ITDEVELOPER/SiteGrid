@@ -100,6 +100,9 @@
             <a class="nav-link {{ request('tab') === 'integrations' ? 'active' : '' }}" href="#integrations" data-bs-toggle="pill">
                 <i class="bi bi-plug"></i> Integrations
             </a>
+            <a class="nav-link {{ request('tab') === 'accounts' ? 'active' : '' }}" href="#accounts" data-bs-toggle="pill">
+                <i class="bi bi-credit-card"></i> Payment Accounts
+            </a>
             <a class="nav-link {{ request('tab') === 'billing' ? 'active' : '' }}" href="#billing" data-bs-toggle="pill">
                 <i class="bi bi-receipt"></i> Billing & Pricing
             </a>
@@ -409,6 +412,11 @@
                             <label class="form-label">Invoice Reminder Days (comma-separated)</label>
                             <input type="text" name="invoice_reminder_days" class="form-control" 
                                 value="{{ old('invoice_reminder_days', $settings->invoice_reminder_days ?? '3,7,14') }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Default Invoice Due Days</label>
+                            <input type="number" name="default_invoice_due_days" class="form-control" min="1" max="90"
+                                value="{{ old('default_invoice_due_days', $settings->default_invoice_due_days ?? 14) }}" required>
                         </div>
                         <div class="col-12">
                             <button type="button" class="btn btn-sm btn-outline-primary preview-invoice-btn">
@@ -817,6 +825,246 @@
                 </form>
             </div>
 
+            <!-- 15. Payment Accounts Management -->
+            <div class="tab-pane fade {{ request('tab') === 'accounts' ? 'show active' : '' }}" id="accounts">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h4 class="mb-1">Payment Accounts Management</h4>
+                        <p class="text-muted mb-0">Configure platform M-Pesa accounts for deposits and invoice payments</p>
+                    </div>
+                </div>
+
+                @if(session('account_success'))
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <i class="bi bi-check-circle me-2"></i>{{ session('account_success') }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                @endif
+
+                <div class="row g-4">
+                    <!-- Escrow Account -->
+                    <div class="col-lg-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-safe me-2 text-primary"></i>Escrow Account
+                                    </h5>
+                                    <small class="text-muted">For worker deposit payments</small>
+                                </div>
+                                @if($escrowAccount)
+                                    <span class="badge {{ ($escrowAccount->status ?? 'inactive') === 'active' ? 'bg-success' : 'bg-secondary' }}">
+                                        {{ ucfirst($escrowAccount->status) }}
+                                    </span>
+                                @endif
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="{{ route('admin.accounts.save') }}" class="account-form">
+                                    @csrf
+                                    <input type="hidden" name="account_type" value="deposit">
+                                    @if($escrowAccount)
+                                        <input type="hidden" name="account_id" value="{{ $escrowAccount->id }}">
+                                    @endif
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Account Name</label>
+                                        <input type="text" name="name" class="form-control" 
+                                            value="{{ $escrowAccount->name ?? 'Platform Escrow' }}" required>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">M-Pesa Shortcode</label>
+                                        <input type="text" name="shortcode" class="form-control" 
+                                            value="{{ $escrowAccount->shortcode ?? '' }}" required
+                                            placeholder="e.g., 174379">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Consumer Key</label>
+                                        <div class="input-group">
+                                            <input type="password" name="consumer_key" class="form-control secret-input"
+                                                value="{{ $escrowAccount->credentials['consumer_key'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Consumer Secret</label>
+                                        <div class="input-group">
+                                            <input type="password" name="consumer_secret" class="form-control secret-input"
+                                                value="{{ $escrowAccount->credentials['consumer_secret'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Passkey</label>
+                                        <div class="input-group">
+                                            <input type="password" name="passkey" class="form-control secret-input"
+                                                value="{{ $escrowAccount->credentials['passkey'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    @if($escrowAccount)
+                                        <div class="mb-3 p-2 bg-light rounded">
+                                            <small class="text-muted">
+                                                Last tested: {{ $escrowAccount->last_tested_at?->diffForHumans() ?? 'Never' }}
+                                            </small>
+                                        </div>
+                                    @endif
+
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox" name="is_primary" class="form-check-input" 
+                                                id="escrowPrimary" value="1"
+                                                {{ $escrowAccount && $escrowAccount->is_primary ? 'checked' : '' }}>
+                                            <label class="form-check-label" for="escrowPrimary">
+                                                Set as Primary Account
+                                                <small class="text-muted d-block">Use this account for all deposit payments by default</small>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="bi bi-check-lg me-1"></i>Save Account
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary test-account-btn" data-account-type="escrow">
+                                            <i class="bi bi-lightning me-1"></i>Test Connection
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Revenue Account -->
+                    <div class="col-lg-6">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-cash-coin me-2 text-success"></i>Invoice Revenue Account
+                                    </h5>
+                                    <small class="text-muted">For invoice payment collection</small>
+                                </div>
+                                @if($revenueAccount)
+                                    <span class="badge {{ ($revenueAccount->status ?? 'inactive') === 'active' ? 'bg-success' : 'bg-secondary' }}">
+                                        {{ ucfirst($revenueAccount->status) }}
+                                    </span>
+                                @endif
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="{{ route('admin.accounts.save') }}" class="account-form">
+                                    @csrf
+                                    <input type="hidden" name="account_type" value="invoice">
+                                    @if($revenueAccount)
+                                        <input type="hidden" name="account_id" value="{{ $revenueAccount->id }}">
+                                    @endif
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Account Name</label>
+                                        <input type="text" name="name" class="form-control" 
+                                            value="{{ $revenueAccount->name ?? 'Platform Revenue' }}" required>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">M-Pesa Shortcode</label>
+                                        <input type="text" name="shortcode" class="form-control" 
+                                            value="{{ $revenueAccount->shortcode ?? '' }}" required
+                                            placeholder="e.g., 174379">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Consumer Key</label>
+                                        <div class="input-group">
+                                            <input type="password" name="consumer_key" class="form-control secret-input"
+                                                value="{{ $revenueAccount->credentials['consumer_key'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Consumer Secret</label>
+                                        <div class="input-group">
+                                            <input type="password" name="consumer_secret" class="form-control secret-input"
+                                                value="{{ $revenueAccount->credentials['consumer_secret'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Passkey</label>
+                                        <div class="input-group">
+                                            <input type="password" name="passkey" class="form-control secret-input"
+                                                value="{{ $revenueAccount->credentials['passkey'] ?? '' }}" required>
+                                            <button type="button" class="btn btn-outline-secondary reveal-btn">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    @if($revenueAccount)
+                                        <div class="mb-3 p-2 bg-light rounded">
+                                            <small class="text-muted">
+                                                Last tested: {{ $revenueAccount->last_tested_at?->diffForHumans() ?? 'Never' }}
+                                            </small>
+                                        </div>
+                                    @endif
+
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox" name="is_primary" class="form-check-input" 
+                                                id="revenuePrimary" value="1"
+                                                {{ $revenueAccount && $revenueAccount->is_primary ? 'checked' : '' }}>
+                                            <label class="form-check-label" for="revenuePrimary">
+                                                Set as Primary Account
+                                                <small class="text-muted d-block">Use this account for all invoice payments by default</small>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="bi bi-check-lg me-1"></i>Save Account
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary test-account-btn" data-account-type="revenue">
+                                            <i class="bi bi-lightning me-1"></i>Test Connection
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>How it works:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>When workers deposit to their wallet via STK push → routes to <strong>Escrow Account</strong></li>
+                                <li>When owners pay invoices via STK push → routes to <strong>Invoice Revenue Account</strong></li>
+                                <li>Each account can use the same or different M-Pesa credentials</li>
+                                <li>Test each account to verify credentials before going live</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -837,6 +1085,112 @@ document.querySelectorAll('.reveal-btn').forEach(btn => {
         }
     });
 });
+
+// Test Payment Account - Save then Test Connection
+document.querySelectorAll('.test-account-btn').forEach(btn => {
+    btn.addEventListener('click', async function(e) {
+        e.preventDefault();
+        const form = this.closest('form');
+        const originalHTML = this.innerHTML;
+        this.disabled = true;
+        
+        try {
+            // Step 1: Save the account
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+            
+            const formData = new FormData(form);
+            const saveResponse = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || form.querySelector('[name="_token"]').value}
+            });
+            
+            if (!saveResponse.ok) {
+                throw new Error('Failed to save account');
+            }
+            
+            // Step 2: Get account ID 
+            let accountId = form.querySelector('[name="account_id"]')?.value;
+            
+            if (!accountId) {
+                showToast('Account saved! Reloading page...', 'info');
+                setTimeout(() => { window.location.reload(); }, 1500);
+                return;
+            }
+            
+            // Step 3: Test the connection
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing...';
+            
+            const testUrl = '{{ route("admin.accounts.test", ["id" => "PLACEHOLDER"]) }}'.replace('PLACEHOLDER', accountId);
+            const testResponse = await fetch(testUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            // Check if response is JSON before parsing
+            const contentType = testResponse.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const errorText = await testResponse.text();
+                throw new Error(`Server returned ${testResponse.status}: ${errorText.substring(0, 100)}...`);
+            }
+            
+            const testResult = await testResponse.json();
+            
+            if (testResult.success) {
+                showToast(`✓ Account verified! (Sandbox)<br>Shortcode: ${testResult.shortcode}<br>Token expires: ${testResult.token_expires}s`, 'success');
+            } else {
+                showToast(`✗ Test failed:<br>${testResult.message}<br>${testResult.hint || ''}`, 'danger');
+            }
+        } catch (error) {
+            console.error('Account test error:', error);
+            showToast('Error testing account: ' + error.message, 'danger');
+        } finally {
+            this.disabled = false;
+            this.innerHTML = originalHTML;
+        }
+    });
+});
+
+// Toast notification helper
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toast-container') || createToastContainer();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'danger' ? 'danger' : 'info'} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+    
+    toast.addEventListener('hidden.bs.toast', () => {
+        toast.remove();
+    });
+}
+
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+    document.body.appendChild(container);
+    return container;
+}
 
 // Test MPesa connection
 document.querySelector('.test-mpesa-btn')?.addEventListener('click', async function() {

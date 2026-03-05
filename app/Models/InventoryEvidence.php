@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class InventoryEvidence extends Model
 {
+    protected $table = 'inventory_evidences';
+    
     protected $fillable = [
         'site_id',
         'evidenceable_type',

@@ -13,7 +13,7 @@
     </div>
     <div class="col-md-4">
         <div class="card kpi-card p-3">
-            <div class="text-muted small">Approved</div>
+            <div class="text-muted small">Approved & Paid</div>
             <div class="h4 mb-0 text-success">{{ $summary['approved'] }}</div>
         </div>
     </div>
@@ -32,7 +32,7 @@
                 <select class="form-select" name="status">
                     <option value="">All Status</option>
                     <option value="pending" {{ $status === 'pending' ? 'selected' : '' }}>Pending</option>
-                    <option value="completed" {{ $status === 'completed' ? 'selected' : '' }}>Approved</option>
+                    <option value="completed" {{ $status === 'completed' ? 'selected' : '' }}>Paid</option>
                     <option value="failed" {{ $status === 'failed' ? 'selected' : '' }}>Rejected</option>
                 </select>
             </div>
@@ -45,7 +45,7 @@
 
 <div class="card kpi-card">
     <div class="card-header bg-white border-0">
-        <h6 class="mb-0">Worker Claims (Payout Requests)</h6>
+        <h6 class="mb-0">Worker Claims (Withdrawal Requests)</h6>
     </div>
     <div class="table-responsive">
         <table class="table align-middle mb-0">
@@ -53,8 +53,9 @@
                 <tr>
                     <th>Worker</th>
                     <th>Site</th>
-                    <th>Pay Period</th>
-                    <th>Amount</th>
+                    <th>Requested Amount</th>
+                    <th>Reason</th>
+                    <th>Requested On</th>
                     <th>Status</th>
                     <th>Action</th>
                 </tr>
@@ -66,30 +67,40 @@
                             <strong>{{ $claim->worker->name ?? 'Unknown' }}</strong><br>
                             <small class="text-muted">{{ $claim->worker->phone ?? '—' }}</small>
                         </td>
-                        <td>{{ $claim->payCycle->site->name ?? '—' }}</td>
+                        <td>{{ $claim->site->name ?? '—' }}</td>
                         <td>
-                            <small>
-                                {{ $claim->payCycle->start_date->format('d M') }} - 
-                                {{ $claim->payCycle->end_date->format('d M Y') }}
-                            </small>
+                            <strong>KES {{ number_format($claim->requested_amount, 2) }}</strong>
                         </td>
                         <td>
-                            <strong>KES {{ number_format($claim->net_amount, 2) }}</strong><br>
-                            <small class="text-muted">Gross: {{ number_format($claim->gross_amount, 2) }}</small>
+                            <small>{{ $claim->reason ? substr($claim->reason, 0, 40) . (strlen($claim->reason) > 40 ? '...' : '') : '—' }}</small>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ optional($claim->requested_at)->format('M d, Y H:i') ?? '—' }}</small>
                         </td>
                         <td>
                             @php
                                 $statusBadge = match($claim->status) {
-                                    'pending' => 'text-bg-warning',
-                                    'completed' => 'text-bg-success',
-                                    'failed' => 'text-bg-danger',
+                                    'pending_foreman' => 'text-bg-warning',
+                                    'pending_owner' => 'text-bg-info',
+                                    'approved' => 'text-bg-secondary',
+                                    'paid' => 'text-bg-success',
+                                    'rejected' => 'text-bg-danger',
                                     default => 'text-bg-secondary'
                                 };
+                                
+                                $statusLabel = match($claim->status) {
+                                    'pending_foreman' => 'Awaiting Foreman',
+                                    'pending_owner' => 'Awaiting You',
+                                    'approved' => 'Ready to Pay',
+                                    'paid' => 'Completed',
+                                    'rejected' => 'Rejected',
+                                    default => ucfirst($claim->status)
+                                };
                             @endphp
-                            <span class="badge {{ $statusBadge }}">{{ ucfirst($claim->status) }}</span>
+                            <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
                         </td>
                         <td>
-                            @if($claim->status === 'pending')
+                            @if($claim->status === 'pending_owner')
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#approveModal{{ $claim->id }}">
                                         Approve
@@ -97,8 +108,14 @@
                                     <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal{{ $claim->id }}">
                                         Reject
                                     </button>
-                                    <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#overrideModal{{ $claim->id }}" title="Bypass withdrawal window for emergency approval">
-                                        Override
+                                </div>
+                            @elseif($claim->status === 'approved')
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#payModal{{ $claim->id }}" title="Disburse payment">
+                                        Pay
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#rejectModal{{ $claim->id }}">
+                                        Reject
                                     </button>
                                 </div>
                             @else
@@ -120,7 +137,9 @@
                                     </div>
                                     <div class="modal-body">
                                         <p><strong>Worker:</strong> {{ $claim->worker->name }}</p>
-                                        <p><strong>Amount:</strong> KES {{ number_format($claim->net_amount, 2) }}</p>
+                                        <p><strong>Site:</strong> {{ $claim->site->name }}</p>
+                                        <p><strong>Amount:</strong> KES {{ number_format($claim->requested_amount, 2) }}</p>
+                                        <p><strong>Reason:</strong> {{ $claim->reason ?? 'No reason provided' }}</p>
                                         <div class="mb-3">
                                             <label class="form-label">Notes (optional)</label>
                                             <textarea class="form-control" name="notes" rows="2"></textarea>
@@ -128,7 +147,7 @@
                                     </div>
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="submit" class="btn btn-success">Approve Claim</button>
+                                        <button type="submit" class="btn btn-success">Approve & Proceed</button>
                                     </div>
                                 </form>
                             </div>
@@ -148,7 +167,8 @@
                                     </div>
                                     <div class="modal-body">
                                         <p><strong>Worker:</strong> {{ $claim->worker->name }}</p>
-                                        <p><strong>Amount:</strong> KES {{ number_format($claim->net_amount, 2) }}</p>
+                                        <p><strong>Site:</strong> {{ $claim->site->name }}</p>
+                                        <p><strong>Amount:</strong> KES {{ number_format($claim->requested_amount, 2) }}</p>
                                         <div class="mb-3">
                                             <label class="form-label">Reason for rejection *</label>
                                             <textarea class="form-control" name="notes" rows="3" required></textarea>
@@ -163,44 +183,35 @@
                         </div>
                     </div>
 
-                    <!-- Override Withdrawal Window Modal -->
-                    <div class="modal fade" id="overrideModal{{ $claim->id }}" tabindex="-1">
+                    <!-- Pay Modal (for approved claims) -->
+                    <div class="modal fade" id="payModal{{ $claim->id }}" tabindex="-1">
                         <div class="modal-dialog">
                             <div class="modal-content">
-                                <form method="POST" action="{{ route('owner.claims.override-window', $claim) }}">
+                                <form method="POST" action="{{ route('owner.claims.action', $claim) }}">
                                     @csrf
-                                    <div class="modal-header bg-info text-white">
-                                        <h5 class="modal-title">
-                                            <i class="bi bi-exclamation-circle"></i> Override Withdrawal Window
-                                        </h5>
-                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    <input type="hidden" name="action" value="approve">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Process Payment</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <div class="alert alert-warning small mb-3">
-                                            <strong>⚠️ Emergency Approval:</strong> This bypasses the standard withdrawal window and will deduct from your owner wallet.
-                                        </div>
                                         <p><strong>Worker:</strong> {{ $claim->worker->name }}</p>
-                                        <p><strong>Amount:</strong> KES {{ number_format($claim->requested_amount, 2) }}</p>
-                                        <p class="small text-muted">
-                                            <strong>Total Cost:</strong> KES {{ number_format($claim->requested_amount * 1.05 + 25, 2) }}<br>
-                                            (includes 5% platform fee + KES 25 M-Pesa fee)
-                                        </p>
-                                        <div class="mb-3">
-                                            <label class="form-label">Reason for emergency override *</label>
-                                            <textarea class="form-control" name="override_reason" rows="3" placeholder="e.g., Worker medical emergency, urgent family matter..." required minlength="5" maxlength="500"></textarea>
-                                            <small class="form-text text-muted">Required for audit trail. Worker will be notified via SMS.</small>
+                                        <p><strong>Phone:</strong> {{ $claim->worker->phone }}</p>
+                                        <p><strong>Amount to Pay:</strong> <span class="text-success fw-bold">KES {{ number_format($claim->requested_amount, 2) }}</span></p>
+                                        <div class="alert alert-info small">
+                                            Payment will be sent to the worker's M-Pesa number via B2C transfer.
                                         </div>
                                     </div>
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="submit" class="btn btn-info">Approve & Bypass Window</button>
+                                        <button type="submit" class="btn btn-success">Confirm & Send Payment</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     </div>
                 @empty
-                    <tr><td colspan="6" class="text-muted">No claims found.</td></tr>
+                    <tr><td colspan="7" class="text-muted text-center py-4">No claims found.</td></tr>
                 @endforelse
             </tbody>
         </table>

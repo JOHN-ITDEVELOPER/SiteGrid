@@ -17,7 +17,7 @@ class InventoryCategoryController extends Controller
     public function index(Request $request)
     {
         $siteId = $request->query('site_id');
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!$siteId || !in_array($siteId, $ownerSiteIds)) {
             $siteId = $ownerSiteIds[0] ?? null;
@@ -34,7 +34,7 @@ class InventoryCategoryController extends Controller
 
         $site = Site::find($siteId);
         $categories = $site->inventoryCategories()->with('items')->get();
-        $sites = Auth::user()->sites;
+        $sites = Auth::user()->ownedSites()->get();
         $templates = InventoryTemplateService::getAvailableTemplates();
 
         return view('owner.inventory.categories-index', [
@@ -51,10 +51,14 @@ class InventoryCategoryController extends Controller
     public function create(Request $request)
     {
         $siteId = $request->query('site_id');
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
-        if (!in_array($siteId, $ownerSiteIds)) {
-            abort(403, 'Unauthorized');
+        if (!$siteId || !in_array($siteId, $ownerSiteIds)) {
+            $siteId = $ownerSiteIds[0] ?? null;
+        }
+
+        if (!$siteId) {
+            return redirect()->route('owner.inventory.categories.index')->with('error', 'You have no sites to manage.');
         }
 
         $site = Site::find($siteId);
@@ -70,25 +74,34 @@ class InventoryCategoryController extends Controller
      */
     public function store(Request $request)
     {
-        $siteId = $request->input('site_id');
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $siteId = (int) $request->input('site_id');
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
-        if (!in_array($siteId, $ownerSiteIds)) {
-            abort(403, 'Unauthorized');
+        if (!$siteId || !in_array($siteId, $ownerSiteIds)) {
+            return back()->with('error', 'Invalid site selected.');
         }
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:inventory_categories,name,NULL,id,site_id,' . $siteId,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('inventory_categories')
+                    ->where('site_id', $siteId),
+            ],
             'type' => 'required|in:material,tool,equipment',
             'description' => 'nullable|string|max:1000',
         ]);
 
         $validated['site_id'] = $siteId;
 
-        InventoryCategory::create($validated);
-
-        return redirect()->route('owner.inventory.categories.index', ['site_id' => $siteId])
-            ->with('success', 'Category created successfully');
+        try {
+            InventoryCategory::create($validated);
+            return redirect()->route('owner.inventory.categories.index', ['site_id' => $siteId])
+                ->with('success', 'Category created successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to create category: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -124,15 +137,25 @@ class InventoryCategoryController extends Controller
         $siteId = $category->site_id;
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:inventory_categories,name,' . $category->id . ',id,site_id,' . $siteId,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('inventory_categories')
+                    ->where('site_id', $siteId)
+                    ->ignore($category->id),
+            ],
             'type' => 'required|in:material,tool,equipment',
             'description' => 'nullable|string|max:1000',
         ]);
 
-        $category->update($validated);
-
-        return redirect()->route('owner.inventory.categories.index', ['site_id' => $siteId])
-            ->with('success', 'Category updated successfully');
+        try {
+            $category->update($validated);
+            return redirect()->route('owner.inventory.categories.index', ['site_id' => $siteId])
+                ->with('success', 'Category updated successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to update category: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -164,7 +187,7 @@ class InventoryCategoryController extends Controller
         $siteId = $request->input('site_id');
         $templateKey = $request->input('template');
 
-        $ownerSiteIds = Auth::user()->sites()->pluck('sites.id')->toArray();
+        $ownerSiteIds = Auth::user()->ownedSites()->pluck('id')->toArray();
 
         if (!in_array($siteId, $ownerSiteIds)) {
             abort(403, 'Unauthorized');

@@ -8,6 +8,7 @@ use App\Models\Payout;
 use App\Models\SiteWorker;
 use App\Models\WorkerClaim;
 use App\Models\OwnerWallet;
+use App\Services\MpesaFeeService;
 use App\Services\MpesaService;
 use App\Services\WithdrawalWindowService;
 use Illuminate\Http\RedirectResponse;
@@ -182,17 +183,21 @@ class DashboardController extends Controller
                 throw new \Exception('Owner wallet not found. Please contact site administrator.');
             }
 
-            // Check wallet balance
-            if (!$wallet->hasSufficientBalance($claim->requested_amount)) {
-                throw new \Exception("Insufficient owner wallet balance. Required: KES {$claim->requested_amount}, Available: KES {$wallet->balance}. Please contact site administrator.");
+            $feeBreakdown = app(MpesaFeeService::class)->resolveB2CFee($claim->requested_amount, $claim->worker->phone);
+            $mpesaFee = $feeBreakdown['fee'];
+            $totalOwnerCost = $claim->requested_amount + $mpesaFee;
+
+            // Check wallet balance (worker amount + M-Pesa transfer fee)
+            if (!$wallet->hasSufficientBalance($totalOwnerCost)) {
+                throw new \Exception("Insufficient owner wallet balance. Required: KES {$totalOwnerCost}, Available: KES {$wallet->balance}. Please contact site administrator.");
             }
 
             // Deduct from wallet
             $wallet->debit(
-                $claim->requested_amount,
+                $totalOwnerCost,
                 'WorkerClaim',
                 $claim->id,
-                "Auto-disbursed withdrawal for {$claim->worker->name} - Site: {$site->name}"
+                "Auto-disbursed withdrawal for {$claim->worker->name} - Worker amount KES {$claim->requested_amount} + M-Pesa fee KES {$mpesaFee} - Site: {$site->name}"
             );
 
             // Initiate M-Pesa B2C payment
@@ -214,7 +219,7 @@ class DashboardController extends Controller
             if (!$result['success']) {
                 // Refund wallet if B2C initiation fails
                 $wallet->credit(
-                    $claim->requested_amount,
+                    $totalOwnerCost,
                     'WorkerClaim',
                     $claim->id,
                     "Refund: Auto-disbursement failed for {$claim->worker->name}"
